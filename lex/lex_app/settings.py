@@ -152,6 +152,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'rest_framework_api_key',
     "django.contrib.postgres",
+    "django_db_views"
 ]
 
 CRISPY_FAIL_SILENTLY = not DEBUG
