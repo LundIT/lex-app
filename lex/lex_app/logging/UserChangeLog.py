@@ -1,16 +1,14 @@
 from lex.lex_app.lex_models.ModificationRestrictedModelExample import AdminReportsModificationRestriction
 from django.db import models
 
+from lex_app.logging.LogModel import LogModel
 
-class UserChangeLog(models.Model):
-    modification_restriction = AdminReportsModificationRestriction()
-    id = models.AutoField(primary_key=True)
-    user_name = models.TextField()
-    timestamp = models.DateTimeField()
-    message = models.TextField()
-    traceback = models.TextField(default="", null=True)
+
+class UserChangeLog(LogModel):
     calculationId = models.TextField(default='-1')
-    calculation_record = models.TextField(default="legacy")
+    user_name = models.TextField()
+    traceback = models.TextField(default="", null=True)
+
 
     class Meta:
         app_label = 'lex_app'

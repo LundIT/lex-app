@@ -27,7 +27,6 @@ class CalculationModel(LexModel):
     class Meta:
         abstract = True
 
-
     @hook(AFTER_UPDATE)
     def after_calculate(self):
         try:

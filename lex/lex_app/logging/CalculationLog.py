@@ -3,7 +3,10 @@ import threading
 import traceback
 from datetime import datetime
 
+from asgiref.sync import async_to_sync
 from celery import current_task
+from channels.layers import get_channel_layer
+from django_lifecycle import AFTER_SAVE, hook
 
 from lex.lex_app.lex_models.ModificationRestrictedModelExample import AdminReportsModificationRestriction
 from lex.lex_app.rest_api.context import context_id
@@ -13,22 +16,21 @@ from django.core.cache import cache
 from lex.lex_app import settings
 
 from lex.lex_app.logging.CalculationIDs import CalculationIDs
+from lex_app.lex_models.LexModel import LexModel
+from lex_app.logging.LogModel import LogModel
+
 
 #### Note: Messages shall be delivered in the following format: "Severity: Message" The colon and the whitespace after are required for the code to work correctly ####
 # Severity could be something like 'Error', 'Warning', 'Caution', etc. (See Static variables below!)
 
 
-class CalculationLog(models.Model):
-    modification_restriction = AdminReportsModificationRestriction()
-    id = models.AutoField(primary_key=True)
-    timestamp = models.DateTimeField()
+class CalculationLog(LogModel):
+    calculationId = models.TextField(default='test_id')
     trigger_name = models.TextField(null=True)
     message_type = models.TextField(default="")
-    calculationId = models.TextField(default='test_id')
-    calculation_record = models.TextField(default="legacy")
-    message = models.TextField()
     method = models.TextField()
     is_notification = models.BooleanField(default=False)
+
 
     # Severities, to be concatenated with message in create statement
     SUCCESS = 'Success: '
@@ -44,6 +46,20 @@ class CalculationLog(models.Model):
 
     class Meta:
         app_label = 'lex_app'
+
+    @hook(AFTER_SAVE, when='is_notification', is_now=True)
+    def send_calculation_notification(self):
+        channel_layer = get_channel_layer()
+        message = {
+            'type': 'calculation_notification',  # This is the correct naming convention
+            'payload': {
+                'id': self.id,
+                'message': self.message,
+            }
+        }
+        # notification = Notifications(message=instance.message, timestamp=datetime.now())
+        # notification.save()
+        async_to_sync(channel_layer.group_send)(f'calculation_notification', message)
 
     def save(self, *args, **kwargs):
         print(self.calculationId + ": " + self.message)
