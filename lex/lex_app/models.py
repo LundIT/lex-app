@@ -24,7 +24,7 @@
 # from lex.lex_app.lex_models.html_report import HTMLReport
 import os
 
-from lex.lex_app.lex_models.upload_model import UploadModelMixin, ConditionalUpdateMixin
+# from lex.lex_app.lex_models.upload_model import UploadModelMixin, ConditionalUpdateMixin
 # from django.db.models import Model
 from django.db.models.signals import post_save, post_delete, pre_save
 from django.dispatch import receiver

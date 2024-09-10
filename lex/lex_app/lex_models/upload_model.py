@@ -9,6 +9,7 @@ from celery.app.control import Control
 from celery.signals import task_failure, task_success, task_postrun
 
 from django.db.models import Model, BooleanField
+from django_lifecycle import LifecycleModel, AFTER_SAVE, hook
 
 from lex.lex_app.rest_api.signals import update_calculation_status
 from lex.lex_app.logging.CalculationIDs import CalculationIDs
@@ -63,7 +64,7 @@ class CallbackTask(Task):
             record.dont_update = False
             update_calculation_status(record)
 
-class UploadModelMixin(Model, ABC):
+class UploadModelMixin(LifecycleModel):
 
     class Meta():
         abstract = True
@@ -72,6 +73,17 @@ class UploadModelMixin(Model, ABC):
     @abstractmethod
     def update(self):
         pass
+
+    @hook(AFTER_SAVE)
+    def update_handler(self):
+        if (hasattr(self.update, 'delay') and
+                os.getenv("DEPLOYMENT_ENVIRONMENT") and
+                os.getenv("ARCHITECTURE") == "MQ/Worker"):
+            # @custom_shared_task decorator is used
+            self.update.delay(self)
+        else:
+            # @custom_shared_task decorator is not used
+            self.update()
 
 
 class IsCalculatedField(BooleanField):
