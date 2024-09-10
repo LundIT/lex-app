@@ -1,6 +1,7 @@
 import os
 import threading
 import uuid
+from abc import ABC, abstractmethod
 from functools import wraps
 
 from celery import shared_task, Task
@@ -62,14 +63,13 @@ class CallbackTask(Task):
             record.dont_update = False
             update_calculation_status(record)
 
-class UploadModelMixin(Model):
+class UploadModelMixin(Model, ABC):
 
     class Meta():
         abstract = True
         # app_label = "ACP_PFE"
 
-        
-
+    @abstractmethod
     def update(self):
         pass
 
