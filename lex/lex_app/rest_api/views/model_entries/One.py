@@ -8,9 +8,13 @@ from rest_framework.mixins import CreateModelMixin, UpdateModelMixin
 
 from lex.lex_app.rest_api.views.model_entries.mixins.DestroyOneWithPayloadMixin import DestroyOneWithPayloadMixin
 from lex.lex_app.rest_api.views.model_entries.mixins.ModelEntryProviderMixin import ModelEntryProviderMixin
-from lex.lex_app.rest_api.views.utils import get_user_name
+from lex.lex_app.rest_api.views.utils import get_user_name, get_user_email
 from django.db import transaction
 
+from lex_app.lex_models.CalculationModel import CalculationModel
+
+user_name = None
+user_email = None
 
 class OneModelEntry(ModelEntryProviderMixin, DestroyOneWithPayloadMixin, RetrieveUpdateDestroyAPIView, CreateAPIView):
 
@@ -78,8 +82,10 @@ class OneModelEntry(ModelEntryProviderMixin, DestroyOneWithPayloadMixin, Retriev
                 else:
                     if "calculate" in request.data and request.data["calculate"] == "true":
                         # post_save.disconnect(update_handler)
+
+                        # updating the instance with calculate set to True and is_calculated set to IN_PROGRESS
                         instance.calculate = True
-                        instance.is_calculated = 'IN_PROGRESS'
+                        instance.is_calculated = CalculationModel.IN_PROGRESS
                         instance.save(skip_hooks=True)
                         # update_calculation_status(instance)
 
@@ -117,7 +123,7 @@ def log_user_action(calculationId, model_container, message, request):
     """Helper method to log user actions for create and update operations."""
     from lex.lex_app.logging.UserChangeLog import UserChangeLog
 
-    user_name = get_user_name(request)
+    user_name = get_user(request)
 
     user_change_log = UserChangeLog(
         calculationId=calculationId,
@@ -133,7 +139,7 @@ def handle_exception(exception, calculationId, model_container, request):
     from lex.lex_app.logging.UserChangeLog import UserChangeLog
 
     error_message = traceback.format_exc()
-    user_name = get_user_name(request)
+    user_name = get_user(request)
 
     # Log the exception
     user_change_log = UserChangeLog(
@@ -145,3 +151,18 @@ def handle_exception(exception, calculationId, model_container, request):
         traceback=error_message
     )
     return user_change_log
+
+def get_user(request):
+    global user_email
+    global user_name
+    user_name = get_user_name(request)
+    user_email = get_user_email(request)
+    return user_name
+
+def get_email(request):
+    global user_email
+    global user_name
+    user_name = get_user_name(request)
+    user_email = get_user_email(request)
+    return user_email
+

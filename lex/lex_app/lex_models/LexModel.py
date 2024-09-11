@@ -14,7 +14,7 @@ class LexModel(LifecycleModel):
     @hook(AFTER_UPDATE)
     def update_edited_by(self):
         context = context_id.get()
-        if context:
+        if context and "auth" in context['request_obj']:
             self.edited_by = f"{context_id.get()['request_obj'].auth['name']} ({context_id.get()['request_obj'].auth['sub']})"
         else:
             self.edited_by = "Initial Data Upload"
@@ -22,7 +22,7 @@ class LexModel(LifecycleModel):
     @hook(AFTER_CREATE)
     def update_created_by(self):
         context = context_id.get()
-        if context:
+        if context and "auth" in context['request_obj']:
             self.created_by = f"{context['request_obj'].auth['name']} ({context['request_obj'].auth['sub']})"
         else:
             self.created_by = "Initial Data Upload"
