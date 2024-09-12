@@ -12,13 +12,16 @@ class CalculationModel(LexModel):
 
     IN_PROGRESS = 'IN_PROGRESS'
     ERROR = 'ERROR'
+    ABORTED = 'ABORTED'
     SUCCESS = 'SUCCESS'
     NOT_CALCULATED = 'NOT_CALCULATED'
+
     STATUSES = [
         (IN_PROGRESS, 'IN_PROGRESS'),
         (ERROR, 'ERROR'),
         (SUCCESS, 'SUCCESS'),
         (NOT_CALCULATED, 'NOT_CALCULATED'),
+        (ABORTED, 'ABORTED'),
     ]
 
     is_calculated =  models.CharField(max_length=50, choices=STATUSES, default=NOT_CALCULATED)
@@ -32,12 +35,10 @@ class CalculationModel(LexModel):
         try:
             self.update()
             self.is_calculated = self.SUCCESS
-            self.calculate = False
             self.save(skip_hooks=True)
             update_calculation_status(self)
         except Exception as e:
             self.is_calculated = self.ERROR
-            self.calculate = False
             self.save(skip_hooks=True)
             update_calculation_status(self)
             raise e

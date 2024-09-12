@@ -30,8 +30,8 @@ class ModelRegistration:
                         @sync_to_async
                         def reset_instances_with_aborted_calculations():
                             if not os.getenv("CELERY_ACTIVE"):
-                                aborted_calc_instances = model.objects.filter(calculate=True)
-                                aborted_calc_instances.update(calculate=False)
+                                aborted_calc_instances = model.objects.filter(is_calculated=CalculationModel.IN_PROGRESS)
+                                aborted_calc_instances.update(is_calculated=CalculationModel.ABORTED)
 
                         nest_asyncio.apply()
                         loop = asyncio.get_event_loop()
