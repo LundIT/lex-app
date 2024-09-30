@@ -1,4 +1,4 @@
-generic_app @ git+https://github.com/LundIT/lex-generic-app@v1.0.0
+generic_app @ git+https://github.com/LundIT/lex-generic-app@docstring
 wheel
 django~=4.1.10
 django-rest-framework
