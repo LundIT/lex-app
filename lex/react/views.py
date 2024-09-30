@@ -8,6 +8,29 @@ from django.views.static import serve as static_serve
 from lex.lex_app import settings
 
 def serve_react(request, path, document_root=None):
+    """
+    Serve React application files, including dynamic configuration for `config.js`.
+
+    This function serves static files for a React application. If the requested
+    path is `config.js`, it dynamically replaces placeholders with environment
+    variable values. For other paths, it serves the corresponding static file
+    or `index.html` if the file does not exist.
+
+    Parameters
+    ----------
+    request : HttpRequest
+        The HTTP request object.
+    path : str
+        The path of the requested file.
+    document_root : str, optional
+        The root directory of the static files.
+
+    Returns
+    -------
+    HttpResponse
+        The HTTP response object with the requested file content and appropriate
+        cache-control headers.
+    """
     path = posixpath.normpath(path).lstrip("/")
 
     if path == "config.js":

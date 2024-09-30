@@ -7,6 +7,28 @@ VIEW_ONLY = 'view-only'
 
 
 def resolve_user(request, id_token, rbac=True):
+    """
+    Resolve a user from the given request and ID token.
+
+    This function interacts with the Django User model to either get or create a user
+    based on the provided ID token. It also sets the user's email, name, and roles.
+    If RBAC (Role-Based Access Control) is enabled, it assigns the user to the appropriate
+    Django groups based on the roles provided in the ID token.
+
+    Parameters
+    ----------
+    request : HttpRequest
+        The HTTP request object.
+    id_token : dict
+        The ID token containing user information.
+    rbac : bool, optional
+        Flag to enable or disable Role-Based Access Control (default is True).
+
+    Returns
+    -------
+    User or None
+        The resolved user object, or None if the user does not have the required roles.
+    """
     # ask graph if logged in user is in a group /me/memberOf
     # want to see group 6d558e06-309d-4d6c-bb50-54f37a962e40
     # in http://graph.microsoft.com/v1.0/me/memberOf

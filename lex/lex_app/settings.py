@@ -29,6 +29,19 @@ import sentry_sdk
 from sentry_sdk.integrations.django import DjangoIntegration
 
 def traces_sampler(sampling_context):
+    """
+    Determine the sample rate for a given transaction.
+
+    Parameters
+    ----------
+    sampling_context : str
+        The context of the transaction being sampled.
+
+    Returns
+    -------
+    float
+        The sample rate for the transaction. 0.0 to drop the transaction, 0.1 for default sampling rate.
+    """
     if sampling_context == "/health":
         # Drop this transaction, by setting its sample rate to 0%
         return 0

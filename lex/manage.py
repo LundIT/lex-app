@@ -5,6 +5,14 @@ import sys
 
 
 def main():
+    """
+    Set the default Django settings module and execute the command line utility.
+
+    This function sets the 'DJANGO_SETTINGS_MODULE' environment variable to
+    'lex_app.settings' and then attempts to import and execute Django's
+    command-line utility. If Django is not installed or not available on the
+    PYTHONPATH, it raises an ImportError with a descriptive message.
+    """
     os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'lex_app.settings')
     try:
         from django.core.management import execute_from_command_line

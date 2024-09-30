@@ -33,6 +33,19 @@ application = ProtocolTypeRouter(
     }
 )
 def on_server_shutdown(*args, **kwargs):
+    """
+    Handles server shutdown by disconnecting all active consumers.
+
+    This function is registered to be called upon server shutdown to ensure
+    that all active WebSocket consumers are properly disconnected.
+
+    Parameters
+    ----------
+    *args
+        Variable length argument list.
+    **kwargs
+        Arbitrary keyword arguments.
+    """
     loop = asyncio.get_event_loop()
     loop.run_until_complete(BackendHealthConsumer.disconnect_all())
     loop.run_until_complete(CalculationLogConsumer.disconnect_all())
