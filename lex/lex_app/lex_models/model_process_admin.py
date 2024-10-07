@@ -16,14 +16,14 @@ def subtract_from_list(minuend_list, subtrahend_set):
     Returns
     -------
     list
-        A list containing elements from minuend_list that are not in subtrahend_set.
+        A list containing elements of minuend_list not in subtrahend_set.
     """
     return [e for e in minuend_list if e not in subtrahend_set]
 
 
 def is_excluded(field):
     """
-    Check if a field is auto-created.
+    Check if a field is auto-created and should be excluded.
 
     Parameters
     ----------
@@ -57,7 +57,7 @@ def get_all_fields(model):
 
 def get_displayed_fields(model):
     """
-    Get field names of a model that are not auto-created.
+    Get field names of a model that are not excluded.
 
     Parameters
     ----------
@@ -67,7 +67,7 @@ def get_displayed_fields(model):
     Returns
     -------
     list
-        A list of field names that are not auto-created.
+        A list of field names that are not excluded.
     """
     return [field.name for field in model._meta.get_fields() if not is_excluded(field)]
 
@@ -93,15 +93,15 @@ class ModelProcessAdmin:
     Attributes
     ----------
     to_display_string : function
-        Function applied to each instance for getting the display string.
+        Function to get the display string for each instance.
     fields_not_in_table_view : set
-        Set of field names that should not be displayed in the data table for this model.
+        Set of field names not displayed in the data table.
     main_field : str
         Name of the main field of the model.
     _models2fields_in_table_view : dict
         Dictionary mapping models to their fields in table view.
     _allow_quick_instance_creation : bool
-        Whether quick instance creation is allowed.
+        Flag indicating if quick instance creation is allowed.
     """
 
     def __init__(self, to_display_string=None, fields_not_in_table_view=None, main_field=None,
@@ -134,7 +134,7 @@ class ModelProcessAdmin:
 
     def _create_fields_in_table_view(self, model):
         """
-        Create fields to be displayed in the table view for a model.
+        Create and cache the fields to be displayed in the table view for a model.
 
         Parameters
         ----------
@@ -154,7 +154,7 @@ class ModelProcessAdmin:
 
     def get_fields_in_table_view(self, model):
         """
-        Get fields to be displayed in the table view for a model.
+        Get the fields to be displayed in the table view for a model.
 
         Parameters
         ----------

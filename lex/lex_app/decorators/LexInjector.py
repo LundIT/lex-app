@@ -2,9 +2,8 @@ def inject(cls):
     """
     Decorator to inject the correct instance of a class.
 
-    This decorator checks if the class is marked as a singleton and uses the 
-    singleton instance if available. Otherwise, it creates a new instance of 
-    the class and injects it into the decorated class.
+    This decorator checks if the class is marked as a singleton and uses the singleton instance if available.
+    Otherwise, it creates a new instance of the class and injects it into the decorated class.
 
     Parameters
     ----------

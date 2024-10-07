@@ -12,20 +12,19 @@ def get_tokens_and_permissions(request):
     """
     Retrieve tokens and permissions for the given request.
 
-    This function exchanges the provided access token for a confidential access token
-    using Keycloak's token exchange endpoint. It then retrieves the permissions associated
-    with the confidential access token.
+    This function interacts with Keycloak to exchange the provided access token
+    for a confidential access token and fetches the user's permissions.
 
     Parameters
     ----------
     request : HttpRequest
-        The HTTP request object containing the access token in the headers.
+        The HTTP request object containing the authorization header.
 
     Returns
     -------
     dict
-        A dictionary containing the access token, confidential access token, user roles,
-        permissions, and the token response from Keycloak.
+        A dictionary containing the access token, confidential access token,
+        user roles, permissions, and the token response.
     """
     access_token = request.headers["Authorization"].split("Bearer ")[-1]
 
@@ -68,12 +67,12 @@ def get_user_info(request):
     """
     Retrieve user information and permissions for the given request.
 
-    This function extracts the user's name, email, roles, and permissions from the request.
+    This function fetches the user's name, email, roles, and permissions.
 
     Parameters
     ----------
     request : HttpRequest
-        The HTTP request object containing user information.
+        The HTTP request object containing the user information.
 
     Returns
     -------
@@ -93,22 +92,22 @@ def resolve_user(request, id_token, rbac=True):
     """
     Resolve and update user information based on the provided ID token.
 
-    This function sets the user in Sentry, creates or updates the user in the Django
-    database, and assigns the user to appropriate groups based on roles from the ID token.
+    This function sets the user in Sentry, creates or updates the user in the
+    Django User model, and assigns the user to appropriate groups based on roles.
 
     Parameters
     ----------
     request : HttpRequest
         The HTTP request object.
     id_token : dict
-        The ID token containing user information and roles.
+        The ID token containing user information.
     rbac : bool, optional
-        A flag indicating whether to use role-based access control (default is True).
+        Flag to determine if role-based access control (RBAC) should be applied (default is True).
 
     Returns
     -------
     User or None
-        The resolved user object, or None if the user does not have the required roles.
+        The resolved user object or None if the user does not have the required roles.
     """
     # ask graph if logged in user is in a group /me/memberOf
     # want to see group 6d558e06-309d-4d6c-bb50-54f37a962e40

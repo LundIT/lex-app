@@ -80,7 +80,7 @@ class LexLogger:
 
         def details(self):
             """
-            Switch to details content.
+            Switch to the details content.
 
             Returns
             -------
@@ -92,7 +92,7 @@ class LexLogger:
 
         def normal(self):
             """
-            Switch to normal content.
+            Switch to the normal content.
 
             Returns
             -------
@@ -104,7 +104,7 @@ class LexLogger:
 
         def _check_flush(self):
             """
-            Check if flushing is enabled and log the content.
+            Check if flushing is enabled and log the content if true.
 
             Returns
             -------
@@ -117,7 +117,7 @@ class LexLogger:
 
         def add_heading(self, text: str, level: int = 1):
             """
-            Add a heading.
+            Add a heading to the log.
 
             Parameters
             ----------
@@ -207,12 +207,12 @@ class LexLogger:
 
         def add_table(self, data: dict):
             """
-            Add a table from a dictionary.
+            Add a table from a dictionary. Keys are the headers, values are lists of column data.
 
             Parameters
             ----------
             data : dict
-                The table data where keys are headers and values are lists of column data.
+                The table data.
 
             Returns
             -------
@@ -306,14 +306,14 @@ class LexLogger:
 
         def add_link(self, text: str, url: str):
             """
-            Add a hyperlink.
+            Add a link.
 
             Parameters
             ----------
             text : str
                 The link text.
             url : str
-                The URL for the link.
+                The URL.
 
             Returns
             -------
@@ -325,14 +325,14 @@ class LexLogger:
 
         def add_list(self, items: list, ordered: bool = False):
             """
-            Add a list.
+            Add a list, either ordered (numbered) or unordered (bullets).
 
             Parameters
             ----------
             items : list
                 The list items.
             ordered : bool, optional
-                Whether the list is ordered (numbered), by default False.
+                Whether the list is ordered, by default False.
 
             Returns
             -------
@@ -348,12 +348,12 @@ class LexLogger:
 
         def add_code_block(self, code: str, language: str = ""):
             """
-            Add a code block.
+            Add a code block with optional language syntax highlighting.
 
             Parameters
             ----------
             code : str
-                The code to include.
+                The code to add.
             language : str, optional
                 The language for syntax highlighting, by default "".
 
@@ -379,7 +379,7 @@ class LexLogger:
 
         def add_blockquote(self, text: str):
             """
-            Add a blockquote.
+            Add blockquote.
 
             Parameters
             ----------

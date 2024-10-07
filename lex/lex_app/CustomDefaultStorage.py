@@ -6,16 +6,11 @@ from django.core.files.storage import FileSystemStorage
 class CustomDefaultStorage(FileSystemStorage):
     """
     Custom storage class that extends Django's FileSystemStorage to provide
-    URL generation for stored files.
-
-    Methods
-    -------
-    url(name)
-        Generates a URL for the given file name.
+    a method for generating URLs for stored files.
     """
     def url(self, name):
         """
-        Generates a URL for the given file name.
+        Generate a URL for the given file name.
 
         Parameters
         ----------
@@ -25,7 +20,7 @@ class CustomDefaultStorage(FileSystemStorage):
         Returns
         -------
         str
-            The generated URL for the file.
+            The URL of the file.
 
         Raises
         ------

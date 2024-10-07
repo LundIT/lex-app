@@ -18,6 +18,17 @@ from lex_app.utils import GenericAppConfig
 def load_data(test, generic_app_models):
     """
     Load data asynchronously if conditions are met.
+
+    Parameters
+    ----------
+    test : object
+        The test case instance to use for setting up data.
+    generic_app_models : dict
+        Dictionary of generic application models.
+
+    Returns
+    -------
+    None
     """
     _authentication_settings = LexAuthentication()
 
@@ -41,14 +52,42 @@ def load_data(test, generic_app_models):
 def should_load_data(auth_settings):
     """
     Check whether the initial data should be loaded.
+
+    Parameters
+    ----------
+    auth_settings : object
+        The authentication settings to check.
+
+    Returns
+    -------
+    bool
+        True if initial data should be loaded, False otherwise.
     """
     return hasattr(auth_settings, 'initial_data_load') and auth_settings.initial_data_load
 
 
 class LexAppConfig(GenericAppConfig):
+    """
+    Configuration class for the Lex application.
+
+    Attributes
+    ----------
+    name : str
+        The name of the application.
+    """
     name = 'lex_app'
 
     def ready(self):
+        """
+        Prepare the application for use.
+
+        This method is called when the application is ready to start.
+        It initializes necessary settings and starts asynchronous tasks.
+
+        Returns
+        -------
+        None
+        """
         super().ready()
         super().start(
             repo=repo_name
@@ -62,6 +101,15 @@ class LexAppConfig(GenericAppConfig):
     async def async_ready(self, generic_app_models):
         """
         Check conditions and decide whether to load data asynchronously.
+
+        Parameters
+        ----------
+        generic_app_models : dict
+            Dictionary of generic application models.
+
+        Returns
+        -------
+        None
         """
         from lex.lex_app.tests.ProcessAdminTestCase import ProcessAdminTestCase
         _authentication_settings = LexAuthentication()
@@ -93,6 +141,20 @@ class LexAppConfig(GenericAppConfig):
 async def are_all_models_empty(test, _authentication_settings, generic_app_models):
     """
     Check if all models are empty.
+
+    Parameters
+    ----------
+    test : object
+        The test case instance to use for checking models.
+    _authentication_settings : object
+        The authentication settings to use.
+    generic_app_models : dict
+        Dictionary of generic application models.
+
+    Returns
+    -------
+    bool
+        True if all models are empty, False otherwise.
     """
     test.test_path = _authentication_settings.initial_data_load
     return await sync_to_async(test.check_if_all_models_are_empty)(generic_app_models)
@@ -101,5 +163,10 @@ async def are_all_models_empty(test, _authentication_settings, generic_app_model
 def running_in_uvicorn():
     """
     Check if the application is running in Uvicorn context.
+
+    Returns
+    -------
+    bool
+        True if running in Uvicorn context, False otherwise.
     """
     return sys.argv[-1:] == ["lex_app.asgi:application"] and os.getenv("CALLED_FROM_START_COMMAND")

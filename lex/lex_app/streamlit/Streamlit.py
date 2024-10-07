@@ -7,22 +7,28 @@ class Streamlit(HTMLReport):
     """
     Streamlit class that inherits from HTMLReport.
 
-    This class is responsible for generating an HTML iframe to embed a Streamlit app.
+    This class is responsible for generating an HTML iframe
+    to embed a Streamlit application.
+
+    Methods
+    -------
+    get_html(user)
+        Generates the HTML iframe for embedding the Streamlit app.
     """
 
     def get_html(self, user):
         """
-        Generate HTML iframe to embed a Streamlit app.
+        Generates the HTML iframe for embedding the Streamlit app.
 
         Parameters
         ----------
         user : object
-            The user object (not used in this method).
+            The user object (not used in the current implementation).
 
         Returns
         -------
         str
-            HTML string containing an iframe to embed the Streamlit app.
+            The HTML string containing the iframe to embed the Streamlit app.
         """
         return f"""<iframe
               src="{os.getenv("STREAMLIT_URL", "http://localhost:8501")}/?embed=true"

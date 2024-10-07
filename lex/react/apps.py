@@ -3,12 +3,12 @@ from django.apps import AppConfig
 
 class ReactConfig(AppConfig):
     """
-    Configuration for the 'react' application.
+    Configuration for the React application.
 
     Attributes
     ----------
     default_auto_field : str
-        Specifies the type of auto-created primary key field.
+        The default type of auto field to use for models in this app.
     name : str
         The name of the application.
     """

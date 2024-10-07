@@ -66,12 +66,14 @@ class CalculationModel(LexModel):
         Hook method to perform calculation after model update or creation.
 
         This method is triggered after the model instance is updated or created.
-        It handles the calculation process and updates the `is_calculated` status.
+        It handles the calculation process and updates the `is_calculated` status
+        accordingly. If an exception occurs during calculation, the status is set
+        to `ERROR`.
 
         Raises
         ------
         Exception
-            If an error occurs during the calculation.
+            If an error occurs during the calculation process.
         """
         try:
             if hasattr(self, 'is_atomic') and not self.is_atomic:

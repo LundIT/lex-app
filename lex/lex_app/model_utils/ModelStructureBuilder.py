@@ -22,7 +22,7 @@ class ModelStructureBuilder:
     """
     def __init__(self, repo: str = ""):
         """
-        Initialize the ModelStructureBuilder.
+        Initialize the ModelStructureBuilder with an optional repository name.
 
         Parameters
         ----------
@@ -63,7 +63,7 @@ class ModelStructureBuilder:
 
     def extract_and_save_structure(self, full_module_name: str) -> None:
         """
-        Extract and save structure from a module.
+        Extract and save structure from a given module.
 
         Parameters
         ----------

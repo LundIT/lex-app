@@ -3,20 +3,20 @@ from functools import wraps
 
 def LexSingleton(cls):
     """
-    Decorator to make a class a singleton.
+    A decorator to make a class a singleton (only one instance).
 
-    Ensures that only one instance of the class is created. If an instance
-    already exists, it returns the existing instance.
+    This decorator ensures that only one instance of the class exists.
+    If an instance already exists, it returns the existing instance.
 
     Parameters
     ----------
     cls : type
-        The class to be made a singleton.
+        The class to be turned into a singleton.
 
     Returns
     -------
     function
-        A wrapper function that returns the singleton instance of the class.
+        A function that returns the singleton instance of the class.
     """
     instances = {}
 

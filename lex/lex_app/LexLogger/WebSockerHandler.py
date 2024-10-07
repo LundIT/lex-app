@@ -30,9 +30,9 @@ class WebSocketHandler(logging.Handler):
 
     def __init__(self):
         """
-        Initializes the WebSocketHandler.
+        Initialize the WebSocketHandler.
 
-        Sets up the channel layer for sending messages.
+        This sets up the channel layer for sending messages.
         """
         super().__init__()
         self.channel_layer = get_channel_layer()
@@ -41,12 +41,14 @@ class WebSocketHandler(logging.Handler):
 
     def emit(self, record):
         """
-        Sends a log record to the WebSocket channel.
+        Emit a log record.
+
+        This sends the log record to the WebSocket channel after formatting it.
 
         Parameters
         ----------
         record : logging.LogRecord
-            The log record to be sent.
+            The log record to be emitted.
         """
         try:
             message = self.format(record)

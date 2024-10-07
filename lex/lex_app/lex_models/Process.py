@@ -5,13 +5,13 @@ class Process(Model):
     """
     Abstract base class for processes.
 
-    This class serves as a template for creating process models.
-    It is an abstract class and should not be instantiated directly.
+    This class should be subclassed to create specific process models.
+    It includes a method that must be implemented by subclasses.
 
-    Methods
-    -------
-    get_structure()
-        Abstract method that should be implemented by subclasses to define the structure of the process.
+    Attributes
+    ----------
+    Meta : class
+        Meta options for the model, indicating it is abstract.
     """
 
     class Meta():
@@ -27,9 +27,10 @@ class Process(Model):
 
     def get_structure(self):
         """
-        Abstract method to get the structure of the process.
+        Get the structure of the process.
 
-        This method must be implemented by subclasses.
+        This method must be implemented by subclasses to define the specific
+        structure of the process.
 
         Raises
         ------

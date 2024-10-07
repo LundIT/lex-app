@@ -25,33 +25,33 @@ class ModelModificationRestriction(ABC):
         Parameters
         ----------
         user : object
-            The user attempting to create an instance.
+            The user attempting the action.
         violations : list
-            A list to which error messages can be added if the user is not allowed to create instances.
+            A list to which violation messages can be added.
 
         Returns
         -------
         bool
-            True if the user is allowed to create instances, False otherwise.
+            True if the user can create instances in general, False otherwise.
         """
         return True
 
     def can_read_in_general(self, user, violations):
         """
-        Determines whether the given user is allowed to read instances of the model in general. If this results in
-        false for a certain user, the user will not see the existence of this model at all.
+        Determines whether the given user is allowed to read instances of the model in general. 
+        If this results in false for a certain user, the user will not see the existence of this model at all.
 
         Parameters
         ----------
         user : object
-            The user attempting to read instances.
+            The user attempting the action.
         violations : list
-            A list to which error messages can be added if the user is not allowed to read instances.
+            A list to which violation messages can be added.
 
         Returns
         -------
         bool
-            True if the user is allowed to read instances, False otherwise.
+            True if the user can read instances in general, False otherwise.
         """
         return True
 
@@ -62,14 +62,14 @@ class ModelModificationRestriction(ABC):
         Parameters
         ----------
         user : object
-            The user attempting to modify instances.
+            The user attempting the action.
         violations : list
-            A list to which error messages can be added if the user is not allowed to modify instances.
+            A list to which violation messages can be added.
 
         Returns
         -------
         bool
-            True if the user is allowed to modify instances, False otherwise.
+            True if the user can modify instances in general, False otherwise.
         """
         return True
     def can_delete_in_general(self, user, violations):
@@ -79,14 +79,14 @@ class ModelModificationRestriction(ABC):
         Parameters
         ----------
         user : object
-            The user attempting to delete instances.
+            The user attempting the action.
         violations : list
-            A list to which error messages can be added if the user is not allowed to delete instances.
+            A list to which violation messages can be added.
 
         Returns
         -------
         bool
-            True if the user is allowed to delete instances, False otherwise.
+            True if the user can delete instances in general, False otherwise.
         """
         return True
     def can_be_read(self, instance, user, violations):
@@ -96,60 +96,60 @@ class ModelModificationRestriction(ABC):
         Parameters
         ----------
         instance : object
-            The instance the user is attempting to read.
+            The instance being accessed.
         user : object
-            The user attempting to read the instance.
+            The user attempting the action.
         violations : list
-            A list to which error messages can be added if the user is not allowed to read the instance.
+            A list to which violation messages can be added.
 
         Returns
         -------
         bool
-            True if the user is allowed to read the instance, False otherwise.
+            True if the user can read the instance, False otherwise.
         """
         return True
 
     def can_be_modified(self, instance, user, violations, request_data):
         """
         Determines whether the given user can modify the given instance.
-        Important: this method is called on the 'old' instance (i.e. before the modification)!
+        Important: this method is called on the 'old' instance (i.e. before the modification).
 
         Parameters
         ----------
         instance : object
-            The instance the user is attempting to modify.
+            The instance being modified.
         user : object
-            The user attempting to modify the instance.
+            The user attempting the action.
         violations : list
-            A list to which error messages can be added if the user is not allowed to modify the instance.
+            A list to which violation messages can be added.
         request_data : dict
-            The data that the user is attempting to use for the modification.
+            The data being used to modify the instance.
 
         Returns
         -------
         bool
-            True if the user is allowed to modify the instance, False otherwise.
+            True if the user can modify the instance, False otherwise.
         """
         return True
 
     def can_be_deleted(self, instance, user, violations):
         """
         Determines whether the given user can delete the given instance.
-        Important: this method is called on the 'old' instance (i.e. before the modification)!
+        Important: this method is called on the 'old' instance (i.e. before the modification).
 
         Parameters
         ----------
         instance : object
-            The instance the user is attempting to delete.
+            The instance being deleted.
         user : object
-            The user attempting to delete the instance.
+            The user attempting the action.
         violations : list
-            A list to which error messages can be added if the user is not allowed to delete the instance.
+            A list to which violation messages can be added.
 
         Returns
         -------
         bool
-            True if the user is allowed to delete the instance, False otherwise.
+            True if the user can delete the instance, False otherwise.
         """
         return True
 

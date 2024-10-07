@@ -15,9 +15,7 @@ def custom_shared_task(function):
     """
     Custom shared task decorator.
 
-    This decorator wraps a function to be used as a shared task in Celery,
-    adding additional functionality to return the function's return value
-    along with its arguments.
+    Wraps a function to be a shared task with a callback.
 
     Parameters
     ----------
@@ -43,10 +41,9 @@ def custom_shared_task(function):
 @task_postrun.connect
 def task_done(sender=None, task_id=None, task=None, args=None, kwargs=None, **kw):
     """
-    Signal handler for task post-run.
+    Signal handler for task postrun.
 
-    This function is connected to the Celery `task_postrun` signal and
-    shuts down the Celery worker after the task is done.
+    Shuts down the Celery worker after task completion.
 
     Parameters
     ----------
@@ -60,7 +57,7 @@ def task_done(sender=None, task_id=None, task=None, args=None, kwargs=None, **kw
         Original arguments for the executed task.
     kwargs : dict, optional
         Original keyword arguments for the executed task.
-    **kw : dict, optional
+    **kw : dict
         Additional keyword arguments.
     """
     control = Control(app=task.app)
@@ -69,13 +66,10 @@ def task_done(sender=None, task_id=None, task=None, args=None, kwargs=None, **kw
 class CallbackTask(Task):
     """
     Custom Celery Task with callbacks for success and failure.
-
-    This class extends the Celery Task class to add custom behavior
-    on task success and failure.
     """
     def on_success(self, retval, task_id, args, kwargs):
         """
-        Called when the task succeeds.
+        Called when a task succeeds.
 
         Parameters
         ----------
@@ -97,7 +91,7 @@ class CallbackTask(Task):
 
     def on_failure(self, exc, task_id, args, kwargs, einfo):
         """
-        Called when the task fails.
+        Called when a task fails.
 
         Parameters
         ----------
@@ -138,25 +132,20 @@ class UploadModelMixin(Model):
         """
         Update the model instance.
 
-        This method should be overridden by subclasses to provide
-        specific update logic.
+        This method should be overridden by subclasses to provide custom update logic.
         """
         pass
 
 
 class IsCalculatedField(BooleanField):
     """
-    Custom BooleanField to indicate if a calculation is done.
-
-    This field is used to track whether a calculation has been completed.
+    Custom BooleanField to indicate if a calculation is completed.
     """
     pass
 
 class CalculateField(BooleanField):
     """
     Custom BooleanField to indicate if a calculation should be performed.
-
-    This field is used to trigger calculations.
     """
     pass
 
@@ -164,8 +153,7 @@ class ConditionalUpdateMixin(Model):
     """
     Mixin for conditional updates in models.
 
-    This mixin provides functionality to conditionally perform updates
-    based on the state of the model.
+    This mixin provides functionality to conditionally perform calculations and update the model.
     """
 
     celery_result = None
@@ -178,15 +166,12 @@ class ConditionalUpdateMixin(Model):
     @staticmethod
     def conditional_calculation(function):
         """
-        Decorator for conditional calculation.
-
-        This decorator wraps a function to conditionally perform a calculation
-        based on the state of the model instance.
+        Decorator to conditionally perform a calculation.
 
         Parameters
         ----------
         function : callable
-            The function to be wrapped for conditional calculation.
+            The function to be conditionally executed.
 
         Returns
         -------
@@ -194,6 +179,21 @@ class ConditionalUpdateMixin(Model):
             The wrapped function.
         """
         def wrap(*args, **kwargs):
+            """
+            Wrapper function to handle conditional calculation.
+
+            Parameters
+            ----------
+            *args : tuple
+                Positional arguments for the function.
+            **kwargs : dict
+                Keyword arguments for the function.
+
+            Returns
+            -------
+            any
+                The return value of the function or None.
+            """
             self = args[0]
 
             if getattr(self, 'dont_update', False):

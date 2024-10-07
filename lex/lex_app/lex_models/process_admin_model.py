@@ -47,7 +47,7 @@ class DependencyAnalysisMixin(Model):
         Returns
         -------
         dict
-            A dictionary with dependent entries as keys.
+            A dictionary of dependent entries.
         """
         dependent_entries = dict.fromkeys(self.directly_dependent_entries())
         if self.do_cascading_updates:

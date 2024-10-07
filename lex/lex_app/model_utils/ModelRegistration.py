@@ -8,12 +8,13 @@ from asgiref.sync import sync_to_async
 
 class ModelRegistration:
     """
-    A class used to register various models and their configurations with the admin site.
+    A class used to register models, model structures, model styling, and widget structures
+    with the process admin site and admin site.
     """
     @classmethod
     def register_models(cls, models):
         """
-        Register models with the admin site.
+        Register models with the process admin site and admin site.
 
         Parameters
         ----------
@@ -51,12 +52,12 @@ class ModelRegistration:
     @classmethod
     def register_model_structure(cls, structure: dict):
         """
-        Register the structure of a model with the admin site.
+        Register a model structure with the process admin site.
 
         Parameters
         ----------
         structure : dict
-            A dictionary representing the structure of the model.
+            A dictionary representing the model structure to be registered.
         """
         from lex.lex_app.ProcessAdminSettings import processAdminSite
         if structure: processAdminSite.register_model_structure(structure)
@@ -64,12 +65,12 @@ class ModelRegistration:
     @classmethod
     def register_model_styling(cls, styling: dict):
         """
-        Register the styling of a model with the admin site.
+        Register model styling with the process admin site.
 
         Parameters
         ----------
         styling : dict
-            A dictionary representing the styling of the model.
+            A dictionary representing the model styling to be registered.
         """
         from lex.lex_app.ProcessAdminSettings import processAdminSite
         if styling: processAdminSite.register_model_styling(styling)
@@ -77,12 +78,12 @@ class ModelRegistration:
     @classmethod
     def register_widget_structure(cls, structure):
         """
-        Register the structure of a widget with the admin site.
+        Register a widget structure with the process admin site.
 
         Parameters
         ----------
         structure : dict
-            A dictionary representing the structure of the widget.
+            A dictionary representing the widget structure to be registered.
         """
         from lex.lex_app.ProcessAdminSettings import processAdminSite
         if structure: processAdminSite.register_widget_structure(structure)

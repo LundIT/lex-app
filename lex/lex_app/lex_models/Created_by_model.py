@@ -26,16 +26,6 @@ class CreatedByMixin(Model):
         abstract = True
 
     def save(self, *args, **kwargs):
-        """
-        Save the model instance, setting the 'created_by' field to the current user's name.
-
-        Parameters
-        ----------
-        *args
-            Variable length argument list.
-        **kwargs
-            Arbitrary keyword arguments.
-        """
         self.created_by = One.user_name
         super().save(*args, **kwargs)
 

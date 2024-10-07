@@ -5,9 +5,8 @@ class AdminReportsModificationRestriction(ModelModificationRestriction):
     """
     Restriction class for admin reports modification.
 
-    This class inherits from ModelModificationRestriction and defines
-    specific permissions for reading, modifying, creating, and deleting
-    admin reports.
+    This class defines the permissions for reading, modifying, creating, 
+    and deleting admin reports.
 
     Methods
     -------
@@ -31,7 +30,7 @@ class AdminReportsModificationRestriction(ModelModificationRestriction):
 
     def can_read_in_general(self, user, violations):
         """
-        Checks if the user can read in general.
+        Check if the user can read in general.
 
         Parameters
         ----------
@@ -49,7 +48,7 @@ class AdminReportsModificationRestriction(ModelModificationRestriction):
 
     def can_modify_in_general(self, user, violations):
         """
-        Checks if the user can modify in general.
+        Check if the user can modify in general.
 
         Parameters
         ----------
@@ -67,7 +66,7 @@ class AdminReportsModificationRestriction(ModelModificationRestriction):
 
     def can_create_in_general(self, user, violations):
         """
-        Checks if the user can create in general.
+        Check if the user can create in general.
 
         Parameters
         ----------
@@ -85,7 +84,7 @@ class AdminReportsModificationRestriction(ModelModificationRestriction):
 
     def can_delete_in_general(self, user, violations):
         """
-        Checks if the user can delete in general.
+        Check if the user can delete in general.
 
         Parameters
         ----------
@@ -103,12 +102,12 @@ class AdminReportsModificationRestriction(ModelModificationRestriction):
 
     def can_be_read(self, instance, user, violations):
         """
-        Checks if the instance can be read by the user.
+        Check if the instance can be read by the user.
 
         Parameters
         ----------
-        instance : Model
-            The instance being checked.
+        instance : object
+            The instance to be read.
         user : User
             The user attempting the action.
         violations : list
@@ -123,12 +122,12 @@ class AdminReportsModificationRestriction(ModelModificationRestriction):
 
     def can_be_modified(self, instance, user, violations):
         """
-        Checks if the instance can be modified by the user.
+        Check if the instance can be modified by the user.
 
         Parameters
         ----------
-        instance : Model
-            The instance being checked.
+        instance : object
+            The instance to be modified.
         user : User
             The user attempting the action.
         violations : list
@@ -143,12 +142,12 @@ class AdminReportsModificationRestriction(ModelModificationRestriction):
 
     def can_be_created(self, instance, user, violations):
         """
-        Checks if the instance can be created by the user.
+        Check if the instance can be created by the user.
 
         Parameters
         ----------
-        instance : Model
-            The instance being checked.
+        instance : object
+            The instance to be created.
         user : User
             The user attempting the action.
         violations : list
@@ -163,12 +162,12 @@ class AdminReportsModificationRestriction(ModelModificationRestriction):
 
     def can_be_deleted(self, instance, user, violations):
         """
-        Checks if the instance can be deleted by the user.
+        Check if the instance can be deleted by the user.
 
         Parameters
         ----------
-        instance : Model
-            The instance being checked.
+        instance : object
+            The instance to be deleted.
         user : User
             The user attempting the action.
         violations : list
@@ -186,8 +185,8 @@ class ExampleModelModificationRestriction(ModelModificationRestriction):
     """
     Example restriction class for model modification.
 
-    This class inherits from ModelModificationRestriction and defines
-    example permissions for reading, modifying, and creating models.
+    This class serves as an example and defines the permissions for reading, 
+    modifying, and creating instances of a model.
 
     Methods
     -------
@@ -207,7 +206,7 @@ class ExampleModelModificationRestriction(ModelModificationRestriction):
 
     def can_read_in_general(self, user, violations):
         """
-        Checks if the user can read in general.
+        Check if the user can read in general.
 
         Parameters
         ----------
@@ -225,7 +224,7 @@ class ExampleModelModificationRestriction(ModelModificationRestriction):
 
     def can_modify_in_general(self, user, violations):
         """
-        Checks if the user can modify in general.
+        Check if the user can modify in general.
 
         Parameters
         ----------
@@ -243,7 +242,7 @@ class ExampleModelModificationRestriction(ModelModificationRestriction):
 
     def can_create_in_general(self, user, violations):
         """
-        Checks if the user can create in general.
+        Check if the user can create in general.
 
         Parameters
         ----------
@@ -261,12 +260,12 @@ class ExampleModelModificationRestriction(ModelModificationRestriction):
 
     def can_be_read(self, instance, user, violations):
         """
-        Checks if the instance can be read by the user.
+        Check if the instance can be read by the user.
 
         Parameters
         ----------
-        instance : Model
-            The instance being checked.
+        instance : object
+            The instance to be read.
         user : User
             The user attempting the action.
         violations : list
@@ -281,12 +280,12 @@ class ExampleModelModificationRestriction(ModelModificationRestriction):
 
     def can_be_modified(self, instance, user, violations):
         """
-        Checks if the instance can be modified by the user.
+        Check if the instance can be modified by the user.
 
         Parameters
         ----------
-        instance : Model
-            The instance being checked.
+        instance : object
+            The instance to be modified.
         user : User
             The user attempting the action.
         violations : list
@@ -301,12 +300,12 @@ class ExampleModelModificationRestriction(ModelModificationRestriction):
 
     def can_be_created(self, instance, user, violations):
         """
-        Checks if the instance can be created by the user.
+        Check if the instance can be created by the user.
 
         Parameters
         ----------
-        instance : Model
-            The instance being checked.
+        instance : object
+            The instance to be created.
         user : User
             The user attempting the action.
         violations : list

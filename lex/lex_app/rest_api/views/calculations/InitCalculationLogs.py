@@ -12,13 +12,13 @@ class InitCalculationLogs(APIView):
     """
     API view to initialize and retrieve calculation logs.
 
-    This view handles GET requests to fetch calculation logs based on the provided
-    calculation record and calculation ID. It supports pagination through an offset
-    parameter and can also return the size of the log set if requested.
+    This view supports GET requests and requires either an API key or
+    authentication. It provides functionality to retrieve the size of
+    calculation logs or the logs themselves with pagination support.
 
     Attributes
     ----------
-    http_method_names : list of str
+    http_method_names : list
         Allowed HTTP methods for this view.
     permission_classes : list
         Permissions required to access this view.
@@ -42,7 +42,7 @@ class InitCalculationLogs(APIView):
         Returns
         -------
         JsonResponse
-            A JSON response containing the logs or the size of the log set.
+            JSON response containing either the size of the logs or the logs themselves.
         """
         try:
             calculation_record = request.query_params['calculation_record']

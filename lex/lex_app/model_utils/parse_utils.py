@@ -20,7 +20,7 @@ class ModelStructure:
         Parameters
         ----------
         path : str
-            The path to the YAML file containing model information.
+            Path to the YAML file containing model information.
         """
         self.path = path
         self.structure = {}
@@ -30,11 +30,11 @@ class ModelStructure:
 
     def _load_info(self):
         """
-        Load model information from the YAML file.
+        Load the model information from the YAML file.
 
-        This method reads the YAML file specified by the path attribute
-        and populates the structure and styling attributes with the
-        corresponding data from the file.
+        This method reads the YAML file and extracts the model structure
+        and styling information. If the structure or styling is not defined,
+        it prints an error message.
         """
         with open(self.path, 'r') as f:
             data = yaml.safe_load(f)

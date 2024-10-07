@@ -21,11 +21,11 @@ class UserChangeLog(LifecycleModel):
     message : TextField
         Message describing the change.
     traceback : TextField, optional
-        Traceback information if available, default is an empty string.
+        Traceback information if available (default is "", can be null).
     calculationId : TextField
-        ID of the calculation, default is '-1'.
+        ID of the calculation related to the change (default is '-1').
     calculation_record : TextField
-        Record of the calculation, default is 'legacy'.
+        Record of the calculation (default is "legacy").
     """
     modification_restriction = AdminReportsModificationRestriction()
     id = models.AutoField(primary_key=True)
@@ -43,13 +43,13 @@ class UserChangeLog(LifecycleModel):
         """
         Save the UserChangeLog instance.
 
-        If the instance is new (id is None), it calls the parent class's save method.
+        If the instance is new (id is None), it calls the parent save method.
 
         Parameters
         ----------
-        *args
+        *args : tuple
             Variable length argument list.
-        **kwargs
+        **kwargs : dict
             Arbitrary keyword arguments.
         """
         if self.id is None:

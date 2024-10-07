@@ -6,7 +6,7 @@ from lex.lex_app.rest_api.context import context_id
 
 class LexModel(LifecycleModel):
     """
-    Abstract base model that automatically updates 'created_by' and 'edited_by' fields.
+    Abstract base model with lifecycle hooks to update 'created_by' and 'edited_by' fields.
 
     Attributes
     ----------

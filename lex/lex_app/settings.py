@@ -32,7 +32,7 @@ from sentry_sdk.integrations.django import DjangoIntegration
 
 def traces_sampler(sampling_context):
     """
-    Determine the sample rate for Sentry traces based on the sampling context.
+    Determine the sample rate for Sentry traces.
 
     Parameters
     ----------

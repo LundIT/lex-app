@@ -257,7 +257,7 @@ class ProcessAdminTestCase(TestCase):
         Returns
         -------
         dict
-            Dictionary with counts of objects in non-empty models.
+            Dictionary with the count of objects in non-empty models.
         """
         count_of_objects_in_non_empty_models = {}
         for klass in self.get_classes(generic_app_models):

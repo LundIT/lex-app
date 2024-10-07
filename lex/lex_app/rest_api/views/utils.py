@@ -7,7 +7,7 @@ def get_user_name(request):
 
     Parameters
     ----------
-    request : Request
+    request : object
         The request object containing headers and authentication information.
 
     Returns
@@ -29,7 +29,7 @@ def get_user_email(request):
 
     Parameters
     ----------
-    request : Request
+    request : object
         The request object containing headers and authentication information.
 
     Returns

@@ -8,14 +8,14 @@ import lex.lex_app.rest_api.fields.XLSX_field
 
 class Migration(migrations.Migration):
     """
-    Represents a database migration for the Django application.
+    Migration class for database schema changes.
 
     Attributes
     ----------
     initial : bool
         Indicates if this is the initial migration.
     dependencies : list
-        List of migrations this migration depends on.
+        List of migration dependencies.
     operations : list
         List of operations to be applied in this migration.
     """

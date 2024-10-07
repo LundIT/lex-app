@@ -8,7 +8,7 @@ class ReportingModelMixin(Model):
     Attributes
     ----------
     input : bool
-        A flag indicating whether the model is for input.
+        A flag indicating whether the model is in input mode.
     reporting_fields : list
         A list of fields to be included in the report.
     """
