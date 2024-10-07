@@ -9,10 +9,41 @@ from lex.lex_app.logging.CalculationLog import CalculationLog
 from lex_app.LexLogger.LexLogger import LexLogLevel, LexLogger
 
 class InitCalculationLogs(APIView):
+    """
+    API view to initialize and retrieve calculation logs.
+
+    This view handles GET requests to fetch calculation logs based on the provided
+    calculation record and calculation ID. It supports pagination through an offset
+    parameter and can also return the size of the log set if requested.
+
+    Attributes
+    ----------
+    http_method_names : list of str
+        Allowed HTTP methods for this view.
+    permission_classes : list
+        Permissions required to access this view.
+    """
     http_method_names = ['get']
     permission_classes = [HasAPIKey | IsAuthenticated]
 
     def get(self, request, *args, **kwargs):
+        """
+        Handle GET requests to retrieve calculation logs.
+
+        Parameters
+        ----------
+        request : HttpRequest
+            The HTTP request object.
+        *args : tuple
+            Additional positional arguments.
+        **kwargs : dict
+            Additional keyword arguments.
+
+        Returns
+        -------
+        JsonResponse
+            A JSON response containing the logs or the size of the log set.
+        """
         try:
             calculation_record = request.query_params['calculation_record']
             calculation_id = request.query_params['calculation_id']

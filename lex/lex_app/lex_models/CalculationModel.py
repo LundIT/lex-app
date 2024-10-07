@@ -9,6 +9,26 @@ from lex.lex_app.rest_api.signals import update_calculation_status
 
 
 class CalculationModel(LexModel):
+    """
+    Abstract base class for calculation models.
+
+    Attributes
+    ----------
+    IN_PROGRESS : str
+        Status indicating the calculation is in progress.
+    ERROR : str
+        Status indicating an error occurred during calculation.
+    SUCCESS : str
+        Status indicating the calculation was successful.
+    NOT_CALCULATED : str
+        Status indicating the calculation has not been performed.
+    ABORTED : str
+        Status indicating the calculation was aborted.
+    STATUSES : list of tuple
+        List of status choices for the `is_calculated` field.
+    is_calculated : models.CharField
+        Field to store the calculation status.
+    """
 
     IN_PROGRESS = 'IN_PROGRESS'
     ERROR = 'ERROR'
@@ -30,6 +50,11 @@ class CalculationModel(LexModel):
 
     @abstractmethod
     def calculate(self):
+        """
+        Abstract method to perform the calculation.
+
+        This method should be implemented by subclasses.
+        """
         pass
     
     # TODO: For the Celery task cases, this hook should be updated
@@ -37,6 +62,17 @@ class CalculationModel(LexModel):
     @hook(AFTER_UPDATE, on_commit=True)
     @hook(AFTER_CREATE, on_commit=True)
     def calculate_hook(self):
+        """
+        Hook method to perform calculation after model update or creation.
+
+        This method is triggered after the model instance is updated or created.
+        It handles the calculation process and updates the `is_calculated` status.
+
+        Raises
+        ------
+        Exception
+            If an error occurs during the calculation.
+        """
         try:
             if hasattr(self, 'is_atomic') and not self.is_atomic:
                 # TODO: To fix with the correct type

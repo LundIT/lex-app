@@ -2,7 +2,12 @@
 
 import sys
 def main() -> None:
-    """Entrypoint to the ``lex`` umbrella command."""
+    """
+    Entrypoint to the ``lex`` umbrella command.
+
+    This function imports the main function from the lex.bin.lex module
+    and executes it, then exits the program with the returned status code.
+    """
     from lex.bin.lex import main as _main
     sys.exit(_main())
 

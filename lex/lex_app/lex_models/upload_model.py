@@ -12,6 +12,23 @@ from lex.lex_app.rest_api.signals import update_calculation_status
 
 
 def custom_shared_task(function):
+    """
+    Custom shared task decorator.
+
+    This decorator wraps a function to be used as a shared task in Celery,
+    adding additional functionality to return the function's return value
+    along with its arguments.
+
+    Parameters
+    ----------
+    function : callable
+        The function to be wrapped as a shared task.
+
+    Returns
+    -------
+    callable
+        The wrapped function.
+    """
     @shared_task(base=CallbackTask)
     @wraps(function)
     def wrap(*args, **kwargs):
@@ -25,17 +42,52 @@ def custom_shared_task(function):
 ##################
 @task_postrun.connect
 def task_done(sender=None, task_id=None, task=None, args=None, kwargs=None, **kw):
+    """
+    Signal handler for task post-run.
+
+    This function is connected to the Celery `task_postrun` signal and
+    shuts down the Celery worker after the task is done.
+
+    Parameters
+    ----------
+    sender : type, optional
+        The sender of the signal.
+    task_id : str, optional
+        Unique id of the executed task.
+    task : Task, optional
+        The executed task instance.
+    args : tuple, optional
+        Original arguments for the executed task.
+    kwargs : dict, optional
+        Original keyword arguments for the executed task.
+    **kw : dict, optional
+        Additional keyword arguments.
+    """
     control = Control(app=task.app)
     control.shutdown()
 
 class CallbackTask(Task):
+    """
+    Custom Celery Task with callbacks for success and failure.
+
+    This class extends the Celery Task class to add custom behavior
+    on task success and failure.
+    """
     def on_success(self, retval, task_id, args, kwargs):
-        '''
-        retval – The return value of the task.
-        task_id – Unique id of the executed task.
-        args – Original arguments for the executed task.
-        kwargs – Original keyword arguments for the executed task.
-        '''
+        """
+        Called when the task succeeds.
+
+        Parameters
+        ----------
+        retval : any
+            The return value of the task.
+        task_id : str
+            Unique id of the executed task.
+        args : tuple
+            Original arguments for the executed task.
+        kwargs : dict
+            Original keyword arguments for the executed task.
+        """
         if self.name != "initial_data_upload":
             record = retval[1][0]
             record.is_calculated = True
@@ -44,12 +96,22 @@ class CallbackTask(Task):
             update_calculation_status(self)
 
     def on_failure(self, exc, task_id, args, kwargs, einfo):
-        '''
-        exc – The exception raised by the task.
-        task_id – Unique id of the failed task.
-        args – Original arguments for the task that failed.
-        kwargs – Original keyword arguments for the task that failed.
-        '''
+        """
+        Called when the task fails.
+
+        Parameters
+        ----------
+        exc : Exception
+            The exception raised by the task.
+        task_id : str
+            Unique id of the failed task.
+        args : tuple
+            Original arguments for the task that failed.
+        kwargs : dict
+            Original keyword arguments for the task that failed.
+        einfo : ExceptionInfo
+            Exception information.
+        """
         if self.name != "initial_data_upload":
             record = args[0]
             record.is_calculated = False
@@ -60,6 +122,11 @@ class CallbackTask(Task):
             update_calculation_status(record)
 
 class UploadModelMixin(Model):
+    """
+    Mixin for upload models.
+
+    This mixin provides common functionality for models that handle uploads.
+    """
 
     class Meta():
         abstract = True
@@ -68,16 +135,38 @@ class UploadModelMixin(Model):
         
 
     def update(self):
+        """
+        Update the model instance.
+
+        This method should be overridden by subclasses to provide
+        specific update logic.
+        """
         pass
 
 
 class IsCalculatedField(BooleanField):
+    """
+    Custom BooleanField to indicate if a calculation is done.
+
+    This field is used to track whether a calculation has been completed.
+    """
     pass
 
 class CalculateField(BooleanField):
+    """
+    Custom BooleanField to indicate if a calculation should be performed.
+
+    This field is used to trigger calculations.
+    """
     pass
 
 class ConditionalUpdateMixin(Model):
+    """
+    Mixin for conditional updates in models.
+
+    This mixin provides functionality to conditionally perform updates
+    based on the state of the model.
+    """
 
     celery_result = None
     class Meta():
@@ -88,6 +177,22 @@ class ConditionalUpdateMixin(Model):
 
     @staticmethod
     def conditional_calculation(function):
+        """
+        Decorator for conditional calculation.
+
+        This decorator wraps a function to conditionally perform a calculation
+        based on the state of the model instance.
+
+        Parameters
+        ----------
+        function : callable
+            The function to be wrapped for conditional calculation.
+
+        Returns
+        -------
+        callable
+            The wrapped function.
+        """
         def wrap(*args, **kwargs):
             self = args[0]
 

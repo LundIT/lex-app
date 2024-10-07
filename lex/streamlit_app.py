@@ -12,6 +12,14 @@ LUND_BG = f"{os.getenv('LEX_APP_PACKAGE_ROOT')}/assets/lex-bg.jpg"
 
 # Helper Functions
 def set_bg(file):
+    """
+    Set the background image for the Streamlit app.
+
+    Parameters
+    ----------
+    file : str
+        Path to the image file to be used as the background.
+    """
     main_bg_ext = "png"
 
     st.markdown(

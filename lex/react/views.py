@@ -10,6 +10,29 @@ from lex.lex_app import settings
 
 
 def serve_react(request, path, document_root=None):
+    """
+    Serve React application files, with special handling for `config.js`.
+
+    This function serves static files for a React application. If the requested
+    path is `config.js`, it reads the file, replaces placeholders with actual
+    environment variable values, and returns the modified content. For other
+    paths, it serves the corresponding static file if it exists, or `index.html`
+    if the file does not exist.
+
+    Parameters
+    ----------
+    request : HttpRequest
+        The HTTP request object.
+    path : str
+        The path of the requested file.
+    document_root : str, optional
+        The root directory of the documents to be served.
+
+    Returns
+    -------
+    HttpResponse
+        The HTTP response containing the requested file or `index.html`.
+    """
     path = posixpath.normpath(path).lstrip("/")
 
     if path == "config.js":

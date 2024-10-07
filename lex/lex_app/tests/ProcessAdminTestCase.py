@@ -16,8 +16,24 @@ from lex.lex_app import settings
 
 
 class ProcessAdminTestCase(TestCase):
+    """
+    Test case class for processing admin-related tests.
+    """
 
     def replace_tagged_parameters(self, object_parameters):
+        """
+        Replace tagged parameters in the given dictionary.
+
+        Parameters
+        ----------
+        object_parameters : dict
+            Dictionary containing object parameters with possible tags.
+
+        Returns
+        -------
+        dict
+            Dictionary with replaced tagged parameters.
+        """
         for key in object_parameters:
             value: str = object_parameters[key]
             if isinstance(value, str):
@@ -33,6 +49,14 @@ class ProcessAdminTestCase(TestCase):
     test_path = None
 
     def setUpCloudStorage(self, generic_app_models) -> None:
+        """
+        Set up cloud storage for the test case.
+
+        Parameters
+        ----------
+        generic_app_models : dict
+            Dictionary of generic application models.
+        """
         from datetime import datetime
         self.t0 = datetime.now()
         self.tagged_objects = {}
@@ -85,6 +109,9 @@ class ProcessAdminTestCase(TestCase):
                 klass.objects.filter(**object['filter_parameters']).delete()
 
     def setUp(self) -> None:
+        """
+        Set up the test case environment.
+        """
         from datetime import datetime
 
         generic_app_models = {f"{model.__name__}": model for model in
@@ -116,6 +143,9 @@ class ProcessAdminTestCase(TestCase):
                 klass.objects.filter(**object['filter_parameters']).delete()
 
     def tearDown(self) -> None:
+        """
+        Tear down the test case environment.
+        """
         pass
         # logs = pd.DataFrame.from_records(CalculationLog.objects.filter(message_type__in=["Test: Success", "Test: Error"], timestamp__gt=self.t0).values())
         # if len(logs) > 0:
@@ -129,6 +159,14 @@ class ProcessAdminTestCase(TestCase):
         # super().tearDown()
 
     def get_test_data(self):
+        """
+        Get test data for the test case.
+
+        Returns
+        -------
+        list
+            List of test data objects.
+        """
         if self.test_path is None:
             file = inspect.getfile(self.__class__)
             path = Path(file).parent
@@ -141,6 +179,19 @@ class ProcessAdminTestCase(TestCase):
 
 
     def get_test_data_from_path(self, path):
+        """
+        Get test data from the specified path.
+
+        Parameters
+        ----------
+        path : str
+            Path to the test data file.
+
+        Returns
+        -------
+        list
+            List of test data objects.
+        """
         with open(str(path), 'r') as f:
             test_data = json.loads(f.read())
             for index, object in enumerate(test_data):
@@ -159,16 +210,55 @@ class ProcessAdminTestCase(TestCase):
 
 
     def get_classes(self, generic_app_models):
+        """
+        Get a set of classes from the test data.
+
+        Parameters
+        ----------
+        generic_app_models : dict
+            Dictionary of generic application models.
+
+        Returns
+        -------
+        set
+            Set of classes from the test data.
+        """
         test_data = self.get_test_data()
         return set([generic_app_models[object['class']] for object in test_data])
 
     def check_if_all_models_are_empty(self, generic_app_models):
+        """
+        Check if all models are empty.
+
+        Parameters
+        ----------
+        generic_app_models : dict
+            Dictionary of generic application models.
+
+        Returns
+        -------
+        bool
+            True if all models are empty, False otherwise.
+        """
         for klass in self.get_classes(generic_app_models):
             if klass.objects.all().count() > 0:
                 return False
         return True
 
     def get_list_of_non_empty_models(self, generic_app_models):
+        """
+        Get a list of non-empty models.
+
+        Parameters
+        ----------
+        generic_app_models : dict
+            Dictionary of generic application models.
+
+        Returns
+        -------
+        dict
+            Dictionary with counts of objects in non-empty models.
+        """
         count_of_objects_in_non_empty_models = {}
         for klass in self.get_classes(generic_app_models):
             c = klass.objects.all().count()

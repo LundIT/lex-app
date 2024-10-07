@@ -7,8 +7,19 @@ from asgiref.sync import sync_to_async
 
 
 class ModelRegistration:
+    """
+    A class used to register various models and their configurations with the admin site.
+    """
     @classmethod
     def register_models(cls, models):
+        """
+        Register models with the admin site.
+
+        Parameters
+        ----------
+        models : list
+            A list of model classes to be registered.
+        """
         from lex.lex_app.ProcessAdminSettings import processAdminSite, adminSite
         from lex.lex_app.lex_models.Process import Process
         from lex.lex_app.lex_models.html_report import HTMLReport
@@ -39,15 +50,39 @@ class ModelRegistration:
 
     @classmethod
     def register_model_structure(cls, structure: dict):
+        """
+        Register the structure of a model with the admin site.
+
+        Parameters
+        ----------
+        structure : dict
+            A dictionary representing the structure of the model.
+        """
         from lex.lex_app.ProcessAdminSettings import processAdminSite
         if structure: processAdminSite.register_model_structure(structure)
 
     @classmethod
     def register_model_styling(cls, styling: dict):
+        """
+        Register the styling of a model with the admin site.
+
+        Parameters
+        ----------
+        styling : dict
+            A dictionary representing the styling of the model.
+        """
         from lex.lex_app.ProcessAdminSettings import processAdminSite
         if styling: processAdminSite.register_model_styling(styling)
 
     @classmethod
     def register_widget_structure(cls, structure):
+        """
+        Register the structure of a widget with the admin site.
+
+        Parameters
+        ----------
+        structure : dict
+            A dictionary representing the structure of the widget.
+        """
         from lex.lex_app.ProcessAdminSettings import processAdminSite
         if structure: processAdminSite.register_widget_structure(structure)

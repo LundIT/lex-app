@@ -5,6 +5,28 @@ from lex.lex_app.lex_models.ModificationRestrictedModelExample import AdminRepor
 
 
 class UserChangeLog(LifecycleModel):
+    """
+    A model to log changes made by users.
+
+    Attributes
+    ----------
+    modification_restriction : AdminReportsModificationRestriction
+        Restriction applied to modifications.
+    id : AutoField
+        Primary key for the log entry.
+    user_name : TextField
+        Name of the user who made the change.
+    timestamp : DateTimeField
+        Time when the change was made.
+    message : TextField
+        Message describing the change.
+    traceback : TextField, optional
+        Traceback information if available, default is an empty string.
+    calculationId : TextField
+        ID of the calculation, default is '-1'.
+    calculation_record : TextField
+        Record of the calculation, default is 'legacy'.
+    """
     modification_restriction = AdminReportsModificationRestriction()
     id = models.AutoField(primary_key=True)
     user_name = models.TextField()
@@ -18,6 +40,18 @@ class UserChangeLog(LifecycleModel):
         app_label = 'lex_app'
 
     def save(self, *args, **kwargs):
+        """
+        Save the UserChangeLog instance.
+
+        If the instance is new (id is None), it calls the parent class's save method.
+
+        Parameters
+        ----------
+        *args
+            Variable length argument list.
+        **kwargs
+            Arbitrary keyword arguments.
+        """
         if self.id is None:
             super(UserChangeLog, self).save(*args, **kwargs)
     #

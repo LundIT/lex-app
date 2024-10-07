@@ -9,6 +9,24 @@ STANDARD = 'standard'
 VIEW_ONLY = 'view-only'
 
 def get_tokens_and_permissions(request):
+    """
+    Retrieve tokens and permissions for the given request.
+
+    This function exchanges the provided access token for a confidential access token
+    using Keycloak's token exchange endpoint. It then retrieves the permissions associated
+    with the confidential access token.
+
+    Parameters
+    ----------
+    request : HttpRequest
+        The HTTP request object containing the access token in the headers.
+
+    Returns
+    -------
+    dict
+        A dictionary containing the access token, confidential access token, user roles,
+        permissions, and the token response from Keycloak.
+    """
     access_token = request.headers["Authorization"].split("Bearer ")[-1]
 
     keycloak_url = f"{os.getenv('KEYCLOAK_URL')}/realms/{os.getenv('KEYCLOAK_REALM')}/protocol/openid-connect/token"
@@ -47,6 +65,21 @@ def get_tokens_and_permissions(request):
             "token": response.json()}
 
 def get_user_info(request):
+    """
+    Retrieve user information and permissions for the given request.
+
+    This function extracts the user's name, email, roles, and permissions from the request.
+
+    Parameters
+    ----------
+    request : HttpRequest
+        The HTTP request object containing user information.
+
+    Returns
+    -------
+    dict
+        A dictionary containing the user's name, email, roles, and permissions.
+    """
     return {"user":
                 {
                     "name": request.user.name,
@@ -57,6 +90,26 @@ def get_user_info(request):
 
 
 def resolve_user(request, id_token, rbac=True):
+    """
+    Resolve and update user information based on the provided ID token.
+
+    This function sets the user in Sentry, creates or updates the user in the Django
+    database, and assigns the user to appropriate groups based on roles from the ID token.
+
+    Parameters
+    ----------
+    request : HttpRequest
+        The HTTP request object.
+    id_token : dict
+        The ID token containing user information and roles.
+    rbac : bool, optional
+        A flag indicating whether to use role-based access control (default is True).
+
+    Returns
+    -------
+    User or None
+        The resolved user object, or None if the user does not have the required roles.
+    """
     # ask graph if logged in user is in a group /me/memberOf
     # want to see group 6d558e06-309d-4d6c-bb50-54f37a962e40
     # in http://graph.microsoft.com/v1.0/me/memberOf

@@ -31,6 +31,19 @@ from sentry_sdk.integrations.django import DjangoIntegration
 
 
 def traces_sampler(sampling_context):
+    """
+    Determine the sample rate for Sentry traces based on the sampling context.
+
+    Parameters
+    ----------
+    sampling_context : str
+        The context of the trace being sampled.
+
+    Returns
+    -------
+    float
+        The sample rate for the trace. 0.0 to drop the trace, 0.1 for default sampling.
+    """
     if sampling_context == "/health":
         # Drop this transaction, by setting its sample rate to 0%
         return 0

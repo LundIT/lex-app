@@ -31,6 +31,13 @@ lex = click.Group()
 def execute_django_command(command_name, args):
     """
     Generic handler to forward arguments and options to Django management commands.
+
+    Parameters
+    ----------
+    command_name : str
+        The name of the Django management command to execute.
+    args : list
+        The list of arguments to pass to the Django management command.
     """
     # Forwarding the command to Django's call_command
     call_command(command_name, *args)
@@ -39,6 +46,11 @@ def execute_django_command(command_name, args):
 def add_click_command(command_name):
     """
     Dynamically creates a Click command that wraps a Django management command.
+
+    Parameters
+    ----------
+    command_name : str
+        The name of the Django management command to wrap.
     """
 
     @lex.command(name=command_name, context_settings=dict(
@@ -64,7 +76,14 @@ for command_name in commands.keys():
 ))
 @click.pass_context
 def celery(ctx):
-    """Run the ASGI application with Uvicorn."""
+    """
+    Run the Celery application.
+
+    Parameters
+    ----------
+    ctx : click.Context
+        The Click context object containing command-line arguments.
+    """
     celery_args = ctx.args
 
     celery_main(celery_args)
@@ -75,7 +94,14 @@ def celery(ctx):
 ))
 @click.pass_context
 def streamlit(ctx):
-    """Run the ASGI application with Uvicorn."""
+    """
+    Run the Streamlit application.
+
+    Parameters
+    ----------
+    ctx : click.Context
+        The Click context object containing command-line arguments.
+    """
     streamlit_args = ctx.args
     file_index = next((i for i, item in enumerate(streamlit_args) if 'streamlit_app.py' in item), None)
     if file_index is not None:
@@ -89,7 +115,14 @@ def streamlit(ctx):
 ))
 @click.pass_context
 def start(ctx):
-    """Run the ASGI application with Uvicorn."""
+    """
+    Run the ASGI application with Uvicorn.
+
+    Parameters
+    ----------
+    ctx : click.Context
+        The Click context object containing command-line arguments.
+    """
     os.environ.setdefault(
         "CALLED_FROM_START_COMMAND", "True"
     )
@@ -103,11 +136,22 @@ def start(ctx):
     ))
 @click.pass_context
 def init(ctx):
+    """
+    Initialize the Django application by running essential management commands.
+
+    Parameters
+    ----------
+    ctx : click.Context
+        The Click context object containing command-line arguments.
+    """
     for command in ["createcachetable", "makemigrations", "migrate"]:
         execute_django_command(command, ctx.args)
 
 
 def main():
+    """
+    The main entry point for the lex-app CLI.
+    """
     lex(prog_name="lex")
 
 

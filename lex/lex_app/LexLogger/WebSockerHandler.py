@@ -5,6 +5,16 @@ from channels.layers import get_channel_layer
 
 
 class WebSocketHandler(logging.Handler):
+    """
+    A logging handler that sends log messages to a WebSocket channel.
+
+    Attributes
+    ----------
+    DJANGO_TO_REACT_MAPPER : dict
+        A dictionary mapping Django log record attributes to React log attributes.
+    channel_layer : channels.layers.BaseChannelLayer
+        The channel layer used to send messages to the WebSocket.
+    """
     DJANGO_TO_REACT_MAPPER = {
         'calculation_id': 'id',
         'log_id': 'logId',
@@ -19,12 +29,25 @@ class WebSocketHandler(logging.Handler):
     }
 
     def __init__(self):
+        """
+        Initializes the WebSocketHandler.
+
+        Sets up the channel layer for sending messages.
+        """
         super().__init__()
         self.channel_layer = get_channel_layer()
 
 
 
     def emit(self, record):
+        """
+        Sends a log record to the WebSocket channel.
+
+        Parameters
+        ----------
+        record : logging.LogRecord
+            The log record to be sent.
+        """
         try:
             message = self.format(record)
             async_to_sync(self.channel_layer.group_send)(
