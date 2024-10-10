@@ -1,5 +1,6 @@
 import importlib
 import os
+import inspect
 from pathlib import Path
 
 from django.apps import AppConfig
@@ -9,7 +10,7 @@ from django.db import models
 from lex.lex_app.model_utils.ModelRegistration import ModelRegistration
 from lex.lex_app.model_utils.ModelStructureBuilder import ModelStructureBuilder
 from lex_app.model_utils.LexAuthentication import LexAuthentication
-
+from metagpt.tools import TOOL_REGISTRY
 
 # def create_api_key():
 #     try:
@@ -118,6 +119,18 @@ class GenericAppConfig(AppConfig):
                             and issubclass(obj, models.Model)
                             and hasattr(obj, '_meta')
                             and not obj._meta.abstract):
+                        file_path = inspect.getfile(obj)
+                        if "metagpt" in file_path:
+                            # split to handle ../metagpt/metagpt/tools/... where only metapgt/tools/... is needed
+                            file_path = "metagpt" + file_path.split("metagpt")[-1]
+                        source_code = inspect.getsource(obj)
+
+                        TOOL_REGISTRY.register_tool(
+                            tool_name=obj.__name__,
+                            tool_path=file_path,
+                            tool_code=source_code,
+                            tool_source_object=obj
+                        )
                         self.add_model(name, obj)
         except (RuntimeError, AttributeError, ImportError) as e:
             print(f"Error importing {full_module_name}: {e}")
