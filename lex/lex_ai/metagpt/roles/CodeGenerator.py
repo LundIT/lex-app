@@ -17,10 +17,11 @@ class CodeGenerator(Role):
     name: str = "CodeGenerator"
     profile: str = "Expert in generating code based on architecture and specifications"
 
-    def __init__(self, project, **kwargs):
+    def __init__(self, project, user_feedback, **kwargs):
         super().__init__(**kwargs)
         self.set_actions([GenerateCode])
         self.project = project
+        self.user_feedback = user_feedback
 
     async def _act(self) -> Message:
         print("-----------------------------------------------------------------------------------------------------")
@@ -31,7 +32,7 @@ class CodeGenerator(Role):
         generated_code = ""
         for class_to_generate in classes_to_generate:
             generated_code += await self.rc.todo.run(self.project, lex_app_context,
-                                                     generated_code, class_to_generate) + "\n"
+                                                     generated_code, class_to_generate, self.user_feedback) + "\n"
 
 
         # python_codes = parse_codes_with_filenames(generated_code)

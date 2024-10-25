@@ -14,7 +14,7 @@ from lex.lex_ai.rag.rag import RAG
 from metagpt.schema import Message
 from lex.lex_ai.utils import global_message_queue
 
-def generate_project_code_prompt(project, lex_app_context, code, class_to_generate):
+def generate_project_code_prompt(project, lex_app_context, code, class_to_generate, user_feedback=""):
     prompt: str = f"""
     
     Lex App Context:
@@ -45,7 +45,12 @@ def generate_project_code_prompt(project, lex_app_context, code, class_to_genera
     
     # **Available code:**
         {code}
-       
+    
+    Current Project Generated Code:
+    {"This is the first time for this query, there is no project code." if not user_feedback else project.generated_code}
+    
+    User Feedback:
+    {"This is the first time for this query, there is no user feedback." if not user_feedback else user_feedback}
            
     Generation requirement. Before starting to generate the code, please read the following requirements:
     1. Only generate the next class and then stop generating.
@@ -64,7 +69,7 @@ def generate_project_code_prompt(project, lex_app_context, code, class_to_genera
 
 async def generate_project_code(project, user_feedback=""):
     from lex_ai.metagpt.roles.CodeGenerator import CodeGenerator
-    role = CodeGenerator(project)
+    role = CodeGenerator(project, user_feedback)
 
     rsp = await role.run("START")
 

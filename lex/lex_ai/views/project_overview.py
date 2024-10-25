@@ -13,19 +13,18 @@ class ProjectOverview(APIView):
     # permission_classes = [IsAuthenticated, HasAPIKey]
 
     def get(self, request, *args, **kwargs):
-        try:
-            project = Project.objects.first()
-        except:
-            return JsonResponse({'error': "Project is not found"}, status=400)
-
-        overview = project.overview
-
-        return JsonResponse({'overview': overview})
+        project = Project.objects.first()
+        if project:
+            overview = project.overview
+            return JsonResponse({'overview': overview})
+        return JsonResponse({'overview': ''})
 
     def post(self, request, *args, **kwargs):
 
-        project = Project(overview=request.data.get('overview'))
+        project, created = Project.objects.get_or_create(id=1, defaults={'overview': request.data.get('overview')})
 
-        project.save()
+        if not created:
+            project.overview = request.data.get('overview')
+            project.save()
 
         return JsonResponse({'message': 'Overview saved successfully'})

@@ -30,15 +30,10 @@ class ProjectCode(APIView):
         return response
 
     async def patch(self, request, *args, **kwargs):
-        converted_data = {}
-        folders = request.data['folders']
-        for folder in folders:
-            folder_name = folder['folderName']
-            files_dict = {file['fileName']: file['description'] for file in folder['files']}
-            converted_data[folder_name] = files_dict
+        code = request.data.get('code')
 
         project = await sync_to_async(Project.objects.first)()
-        project.structure = converted_data
+        project.generated_code = code
         await sync_to_async(project.save)()
 
-        return JsonResponse({'message': 'Structure saved successfully'})
+        return JsonResponse({'message': 'Project code saved successfully'})

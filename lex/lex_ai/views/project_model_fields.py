@@ -37,10 +37,38 @@ class ProjectModelFields(APIView):
         return response
 
     async def patch(self, request, *args, **kwargs):
-        project = Project.objects.first()
+        project = await sync_to_async(Project.objects.first)()
+        models_fields_data = request.data.get('models', {})
+        result = {}
 
-        project.structure = request.data.get('structure')
+        for model in models_fields_data.values():
+            model_name = model.get("modelName")
+            fields = model.get("fields", {})
 
-        project.save()
+            # Construct the fields dictionary with additionalInfo if available
+            model_fields = {}
+            for field in fields.values():
+                field_name = field["fieldName"]
+                field_type = field["fieldType"]
 
-        return JsonResponse({'message': 'Structure saved successfully'})
+                # Check if additionalInfo exists and include it if present
+                if "additionalInfo" in field:
+                    model_fields[field_name] = f"{field_type} (to {field['additionalInfo']})"
+                else:
+                    model_fields[field_name] = field_type
+
+            result[model_name] = model_fields
+
+
+        # for model in models_fields.values():
+        #     model_name = model.get("modelName")
+        #     fields = model.get("fields", {})
+        #
+        #     # Construct the fields dictionary dynamically
+        #     result[model_name] = {
+        #         field_info["fieldName"]: field_info["fieldType"] for field_info in fields.values()
+        #     }
+        project.models_fields = result
+        await sync_to_async(project.save)()
+
+        return JsonResponse({'message': 'Models and fields are saved successfully'})

@@ -24,10 +24,19 @@ class ProjectBusinessLogic(APIView):
 
     async def post(self, request, *args, **kwargs):
         project = await sync_to_async(Project.objects.first)()
-
+        user_feedback = request.data.get('user_feedback', "")
         files_with_analysis = project.files_with_analysis
         detailed_structure = project.detailed_structure
         models_and_fields = project.models_fields
         response = StreamingHttpResponse(global_message_stream(), content_type="text/plain")
-        asyncio.create_task(generate_business_logic(detailed_structure, files_with_analysis, models_and_fields, project))
+        asyncio.create_task(generate_business_logic(detailed_structure, files_with_analysis, models_and_fields, project, user_feedback))
         return response
+
+    async def patch(self, request, *args, **kwargs):
+        business_logic = request.data.get('business_logic')
+
+        project = await sync_to_async(Project.objects.first)()
+        project.business_logic_calcs = business_logic
+        await sync_to_async(project.save)()
+
+        return JsonResponse({'message': 'Business logic saved successfully'})

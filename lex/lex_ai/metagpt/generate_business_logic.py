@@ -13,7 +13,7 @@ from lex.lex_ai.rag.rag import RAG
 from metagpt.schema import Message
 from lex.lex_ai.utils import global_message_queue
 
-async def generate_business_logic(project_structure, files_with_explanations, models_and_fields, project):
+async def generate_business_logic(project_structure, files_with_explanations, models_and_fields, project, user_feedback=""):
     role = LLM()
 
     rag = RAG()
@@ -32,7 +32,12 @@ async def generate_business_logic(project_structure, files_with_explanations, mo
     
     Project Models and Fields:
     {models_and_fields}
-
+    
+    Current Project Business Logic:
+    {"This is the first time for this query, there is no project business logic." if not user_feedback else project.business_logic_calcs}
+    
+    User Feedback:
+    {"This is the first time for this query, there is no user feedback." if not user_feedback else user_feedback}
 
     [START INSTRUCTIONS]
     1. Given the project structure, describe and implement the business logic of the project in a markdown format.
