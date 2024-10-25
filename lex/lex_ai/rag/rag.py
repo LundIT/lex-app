@@ -99,7 +99,7 @@ class RAG:
         model="text-embedding-3-large",
         openai_api_version="2023-05-15",
         azure_endpoint="https://lund-openai-instance-eastus.openai.azure.com",
-        api_key="0c211119a6624d38a367bc9f79e148b2"
+        api_key="<api_key>"
     )
 
     def get_embeddings(self, text):
