@@ -23,7 +23,7 @@ class OneModelEntry(ModelEntryProviderMixin, DestroyOneWithPayloadMixin, Retriev
 
         calculationId = self.kwargs['calculationId']
 
-        with OperationContext() as context_id:
+        with OperationContext(request) as context_id:
 
             user_change_log = UserChangeLog(calculationId=calculationId, calculation_record=f"{model_container.id}", message=f"Update of a {model_container.id} started", timestamp=datetime.now(), user_name=get_user_name(request))
             user_change_log.save()

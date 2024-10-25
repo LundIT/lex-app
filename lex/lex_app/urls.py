@@ -15,7 +15,7 @@ Including another URLconf
 """
 import os
 
-from django.urls import path, re_path
+from django.urls import path, re_path, include
 
 from react.views import serve_react
 from . import settings, views
@@ -27,5 +27,6 @@ urlpatterns = [
     path('health', views.HealthCheck.as_view(), name='health_view'),
     path(url_prefix + 'admin/', adminSite.urls),
     path(url_prefix, processAdminSite.urls),
+    path("ai/", include('lex_ai.urls')),
     re_path(r"^(?P<path>.*)$", serve_react, {"document_root": settings.REACT_APP_BUILD_PATH}),
 ]

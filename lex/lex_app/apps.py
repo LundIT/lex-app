@@ -51,8 +51,12 @@ class LexAppConfig(GenericAppConfig):
     def ready(self):
         super().ready()
         super().start(
+            repo="lex_ai"
+        )
+        super().start(
             repo=repo_name
         )
+
         generic_app_models = {f"{model.__name__}": model for model in
                               set(list(apps.get_app_config(repo_name).models.values())
                                   + list(apps.get_app_config(repo_name).models.values()))}
@@ -65,7 +69,6 @@ class LexAppConfig(GenericAppConfig):
         """
         from lex.lex_app.tests.ProcessAdminTestCase import ProcessAdminTestCase
         _authentication_settings = LexAuthentication()
-        print(_authentication_settings.initial_data_load)
 
         test = ProcessAdminTestCase()
 
