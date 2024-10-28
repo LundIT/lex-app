@@ -1,4 +1,5 @@
 import asyncio
+import os
 import re
 
 from asgiref.sync import async_to_sync, sync_to_async
@@ -17,7 +18,7 @@ async def generate_business_logic(project_structure, files_with_explanations, mo
     role = LLM()
 
     rag = RAG()
-    i, j = rag.memorize_dir("/Users/melihsunbul/LUND_IT/ai-instance/DemoWindparkConsolidation/venv/src/lex-app/lex")
+    i, j = rag.memorize_dir(os.getenv("METAGPT_PROJECT_ROOT"))
     lex_app_context = rag.query_code("LexModel, CalculationModel, XLSXField, LexLogger", i, j, top_k=7)
 
     prompt = f"""

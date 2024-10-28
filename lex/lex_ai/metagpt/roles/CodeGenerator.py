@@ -53,6 +53,6 @@ class CodeGenerator(Role):
 
     def get_lex_app_context(self, prompt):
         rag = RAG()
-        index, source_code_chunks = rag.memorize_dir("/Users/melihsunbul/LUND_IT/ai-instance/DemoWindparkConsolidation/venv/src/lex-app/lex")
+        index, source_code_chunks = rag.memorize_dir(os.getenv("METAGPT_PROJECT_ROOT"))
         relevant_chunks = rag.query_code(LexPrompts.PROMPT_REQUIREMENT, index, source_code_chunks, top_k=40)
         return "\n".join(relevant_chunks)

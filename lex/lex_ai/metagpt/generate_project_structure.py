@@ -1,4 +1,5 @@
 import asyncio
+import os
 import re
 
 from asgiref.sync import async_to_sync, sync_to_async
@@ -192,7 +193,7 @@ async def generate_project_structure(project_overview, files_with_explanations, 
     rsp_specified_json = rsp_specified_json.content
 
     rag = RAG()
-    i, j = rag.memorize_dir("/Users/melihsunbul/LUND_IT/ai-instance/DemoWindparkConsolidation/venv/src/lex-app/lex")
+    i, j = rag.memorize_dir(os.getenv("METAGPT_PROJECT_ROOT"))
     lex_app_context = rag.query_code("LexModel, CalculationModel, XLSXField, LexLogger", i, j, top_k=10)
 
     # rsp_code = (async_to_sync(code_role.run)
