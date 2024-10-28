@@ -7,7 +7,6 @@ from metagpt.actions import Action
 from metagpt.roles import Role
 from metagpt.roles.di.data_interpreter import DataInterpreter
 import json
-import json5
 from lex.lex_ai.metagpt.roles.LLM import LLM
 
 from lex.lex_ai.rag.rag import RAG

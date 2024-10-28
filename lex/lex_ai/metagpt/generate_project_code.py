@@ -8,7 +8,6 @@ from metagpt.roles import Role
 from metagpt.roles.di.data_interpreter import DataInterpreter
 from lex.lex_ai.metagpt.roles.LLM import LLM
 import json
-import json5
 
 from lex.lex_ai.rag.rag import RAG
 from metagpt.schema import Message
