@@ -23,17 +23,12 @@ from lex.lex_ai.utils import global_message_stream
 import asyncio
 
 class ProjectFunctionalities(APIView):
-    # permission_classes = [IsAuthenticated, HasAPIKey]
+    permission_classes = [IsAuthenticated | HasAPIKey]
 
     async def get(self, request, *args, **kwargs):
         project = await sync_to_async(Project.objects.first)()
 
         functionalities = project.functionalities
-        # response = StreamingHttpResponse(global_message_stream(), content_type="text/plain")
-        #
-        # asyncio.create_task(self.start_team(kwargs))
-        #
-        # return response
 
         return JsonResponse({'functionalities': functionalities})
 

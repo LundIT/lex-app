@@ -6,9 +6,11 @@ from lex.lex_ai.models.ProjectOutputFiles import ProjectOutputFiles
 from django.db import transaction
 from django.core.exceptions import ValidationError
 import json
+from rest_framework.permissions import IsAuthenticated
+from rest_framework_api_key.permissions import HasAPIKey
 
 class ProjectFilesView(APIView):
-    # permission_classes = [IsAuthenticated, HasAPIKey]
+    permission_classes = [IsAuthenticated | HasAPIKey]
 
     def get(self, request, *args, **kwargs):
         try:

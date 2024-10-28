@@ -13,7 +13,7 @@ import asyncio
 from lex.lex_ai.models.Project import Project
 
 class ProjectBusinessLogic(APIView):
-    # permission_classes = [IsAuthenticated, HasAPIKey]
+    permission_classes = [IsAuthenticated | HasAPIKey]
 
     async def get(self, request, *args, **kwargs):
         project = await sync_to_async(Project.objects.first)()

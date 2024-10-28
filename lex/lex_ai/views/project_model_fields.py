@@ -12,21 +12,13 @@ from lex.lex_ai.utils import global_message_stream
 import asyncio
 
 class ProjectModelFields(APIView):
-    # permission_classes = [IsAuthenticated, HasAPIKey]
+    permission_classes = [IsAuthenticated | HasAPIKey]
 
     async def get(self, request, *args, **kwargs):
-        # if request.query_params.get('is_done') == "true":
 
         project = await sync_to_async(Project.objects.first)()
         models_fields = project.models_fields
         return JsonResponse({'model_and_fields': models_fields})
-        #
-        # else:
-        #     project = await sync_to_async(Project.objects.first)()
-        #     detailed_structure = project.detailed_structure
-        #     response = StreamingHttpResponse(global_message_stream(), content_type="text/plain")
-        #     asyncio.create_task(generate_model_structure(detailed_structure, project))
-        #     return response
 
     async def post(self, request, *args, **kwargs):
         project = await sync_to_async(Project.objects.first)()
@@ -59,15 +51,6 @@ class ProjectModelFields(APIView):
 
             result[model_name] = model_fields
 
-
-        # for model in models_fields.values():
-        #     model_name = model.get("modelName")
-        #     fields = model.get("fields", {})
-        #
-        #     # Construct the fields dictionary dynamically
-        #     result[model_name] = {
-        #         field_info["fieldName"]: field_info["fieldType"] for field_info in fields.values()
-        #     }
         project.models_fields = result
         await sync_to_async(project.save)()
 

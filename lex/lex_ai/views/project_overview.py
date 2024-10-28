@@ -10,7 +10,7 @@ from lex.lex_ai.models.Project import Project
 
 
 class ProjectOverview(APIView):
-    # permission_classes = [IsAuthenticated, HasAPIKey]
+    permission_classes = [IsAuthenticated | HasAPIKey]
 
     def get(self, request, *args, **kwargs):
         project = Project.objects.first()

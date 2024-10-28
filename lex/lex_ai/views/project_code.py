@@ -13,10 +13,9 @@ from lex.lex_ai.utils import global_message_stream
 import asyncio
 
 class ProjectCode(APIView):
-    # permission_classes = [IsAuthenticated, HasAPIKey]
+    permission_classes = [IsAuthenticated | HasAPIKey]
 
     async def get(self, request, *args, **kwargs):
-        # if request.query_params.get('is_done') == "true":
         project = await sync_to_async(Project.objects.first)()
         code = project.generated_code
         return JsonResponse({'code': code})

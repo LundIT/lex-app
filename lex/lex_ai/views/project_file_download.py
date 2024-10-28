@@ -11,7 +11,7 @@ from lex.lex_ai.models.ProjectInputFiles import ProjectInputFiles
 from lex.lex_ai.models.ProjectOutputFiles import ProjectOutputFiles
 
 class ProjectFileDownload(APIView):
-    http_method_names = ['get']
+    permission_classes = [IsAuthenticated | HasAPIKey]
 
     def get(self, request, *args, **kwargs):
         file_type = request.query_params.get('file_type', None)  # 'input' or 'output'
