@@ -26,7 +26,7 @@ class ClassInfo:
         self.imports = imports
 
     def __str__(self):
-        return f"Class: {self.name}\nImport Path: {self.import_path}\nImports: {self.imports}\nDocstring: {self.docstring}\nSource Code:\n{self.source_code}"
+        return f"Class: {self.name}\nImport Path: {self.import_path}\n{'Docstring: ' + self.docstring if self.docstring else ''}\nSource Code:\n{self.source_code}"
 
 class FunctionInfo:
     def __init__(self, name, docstring, source_code):
@@ -37,6 +37,7 @@ class FunctionInfo:
     def __str__(self):
         return f"Function: {self.name}\nDocstring: {self.docstring}\nSource Code:\n{self.source_code}"
 class RAG:
+    LEX_APP_DIR = "/home/hazem/LUND_IT/lex_app_submodels/lex_ai/DemoWindparkConsolidation/venv/src/lex-app"
     def __init__(self):
         self.tables = []
         self.index = ""
@@ -51,7 +52,8 @@ class RAG:
         structure = {}
 
         # Extract the module name by converting the file path to a Python import path
-        module_name = file_path.replace(os.sep, ".").rstrip(".py")
+        relative_path = os.path.relpath(file_path, start=self.LEX_APP_DIR)
+        module_name = relative_path.replace(os.sep, ".").rstrip(".py")
 
         visitor = TopLevelVisitor(file_content, module_name)
         visitor.visit(tree)
@@ -227,3 +229,12 @@ class TopLevelVisitor(ast.NodeVisitor):
             )
             self.functions.append(function_info)
         self.generic_visit(node)
+
+
+
+rag = RAG()
+i, j = rag.memorize_dir(RAG.LEX_APP_DIR)
+
+lex_app_context = rag.query_code("CalculationModel", i, j, top_k=1)[0]
+
+print(lex_app_context)

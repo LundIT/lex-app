@@ -1,16 +1,9 @@
-import asyncio
-import re
-
 from asgiref.sync import sync_to_async
-from metagpt.actions import Action
-from metagpt.roles import Role
-from metagpt.roles.di.data_interpreter import DataInterpreter
 from lex.lex_ai.metagpt.roles.LLM import LLM
 import json
-
-from lex.lex_ai.rag.rag import RAG
-from metagpt.schema import Message
 from lex.lex_ai.utils import global_message_queue
+from lex_ai.metagpt.get_files_to_generate import get_files_to_generate
+
 
 async def generate_model_structure(project_structure, project, user_feedback=""):
     role = LLM()
@@ -83,5 +76,8 @@ async def generate_model_structure(project_structure, project, user_feedback="")
 
     project.models_fields = json.loads(rsp.content)
     await sync_to_async(project.save)()
+
+    await get_files_to_generate(project)
+
     await global_message_queue.put("DONE")
     return json.loads(rsp.content)

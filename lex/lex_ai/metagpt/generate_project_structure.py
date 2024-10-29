@@ -1,16 +1,9 @@
-import asyncio
-import os
-import re
-
-from asgiref.sync import async_to_sync, sync_to_async
-from metagpt.actions import Action
-from metagpt.roles import Role
+from asgiref.sync import sync_to_async
 from metagpt.roles.di.data_interpreter import DataInterpreter
 import json
 from lex.lex_ai.metagpt.roles.LLM import LLM
 
 from lex.lex_ai.rag.rag import RAG
-from metagpt.schema import Message
 from lex.lex_ai.utils import global_message_queue
 
 
@@ -191,9 +184,9 @@ async def generate_project_structure(project_overview, files_with_explanations, 
 
     rsp_specified_json = rsp_specified_json.content
 
-    rag = RAG()
-    i, j = rag.memorize_dir(os.getenv("METAGPT_PROJECT_ROOT"))
-    lex_app_context = rag.query_code("LexModel, CalculationModel, XLSXField, LexLogger", i, j, top_k=10)
+    # rag = RAG()
+    # i, j = rag.memorize_dir(RAG.LEX_APP_DIR)
+    # lex_app_context = rag.query_code("LexModel", i, j, top_k=2)
 
     # rsp_code = (async_to_sync(code_role.run)
     #             (output_code.format(project_structure=rsp_json, file_context=rsp,
@@ -212,24 +205,27 @@ async def enrich_json_with_files_content(files_with_explanations):
     role = DataInterpreter(max_react_loop=1, tools=["<all>"], react_mode="react", code_result=True)
 
     prompt = f"""
+    
+    Files:
+    {files_with_explanations}
+    
     Given the files with explanations, analyze the content of the files and understand the components of the project and their relationships. 
     [START INSTRUCTIONS]
     1. Open the file and get the content
     1. Transform the every Timestamp to the form or format of YYYY-MM-DD HH:MM:SS or None
     2. Timestamp should be parsable from a json prespective
     3. Name should be without file extensions
-    4. no ```json
-    5. output of the json should be similar to the `style` defined afterwards
+    5. output of the json should be similar to the `style` defined above but without whitespaces
     6. The json should have no whitespaces
-    7. Don't model classes from the lex_app, only model the entities from the project description and files content
+    7. Output no whitespace or any null bytes, only the json with no ''' json
+    8. The json output is kind of large, somtimes the output would be cut off, so do something about that
     [STOP INSTRUCTIONS]
-
-    Files:
-    {files_with_explanations} 
+    
+    [START OUTPUTING JSON] 
     """
 
     style = """
-    **OUTPUT**:
+    style:
     {
         "components": [
             {
@@ -247,9 +243,9 @@ async def enrich_json_with_files_content(files_with_explanations):
             }
         ]
     }
-
-    result:
     """
-    rsp = (await role.run(prompt + style)).content
-    print("[START INTERPRETER]\n", files_with_explanations, "\n[END]")
+
+
+    rsp = (await role.run(style + prompt)).content
+    print("[START INTERPRETER]\n", rsp, "\n[END]")
     return rsp

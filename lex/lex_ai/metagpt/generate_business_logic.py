@@ -1,24 +1,19 @@
-import asyncio
-import os
-import re
-
-from asgiref.sync import async_to_sync, sync_to_async
-from metagpt.actions import Action
-from metagpt.roles import Role
-from metagpt.roles.di.data_interpreter import DataInterpreter
-import json
+from asgiref.sync import  sync_to_async
 from lex.lex_ai.metagpt.roles.LLM import LLM
 
 from lex.lex_ai.rag.rag import RAG
-from metagpt.schema import Message
 from lex.lex_ai.utils import global_message_queue
 
 async def generate_business_logic(project_structure, files_with_explanations, models_and_fields, project, user_feedback=""):
     role = LLM()
 
     rag = RAG()
-    i, j = rag.memorize_dir(os.getenv("METAGPT_PROJECT_ROOT"))
-    lex_app_context = rag.query_code("LexModel, CalculationModel, XLSXField, LexLogger", i, j, top_k=7)
+    i, j = rag.memorize_dir(RAG.LEX_APP_DIR)
+    lex_app_context = "\n".join([rag.query_code("LexModel", i, j, top_k=1)[0],
+            rag.query_code("CalculationModel", i, j, top_k=1)[0],
+            rag.query_code("LexLogger", i, j, top_k=1)[0],
+            rag.query_code("XLSXField", i, j, top_k=1)[0]])
+
 
     prompt = f"""
     lex_app context:

@@ -10,6 +10,7 @@ class Project(models.Model):
     detailed_structure = models.JSONField(blank=True, null=True)
     functionalities = models.TextField(blank=True, null=True)
     models_fields = models.JSONField(blank=True, null=True)
+    classes_and_their_paths = models.JSONField(blank=True, null=True)
     business_logic_calcs = models.TextField(blank=True, null=True)
     # db_table_field_mapping = models.TextField(blank=True, null=True)
     specification_doc = models.TextField(blank=True, null=True)

@@ -1,6 +1,3 @@
-import os
-from io import BytesIO
-
 from asgiref.sync import sync_to_async
 from django.http import JsonResponse, StreamingHttpResponse
 from rest_framework.permissions import IsAuthenticated
