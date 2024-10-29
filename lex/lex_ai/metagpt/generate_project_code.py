@@ -12,6 +12,37 @@ def generate_project_code_prompt(project, lex_app_context, code, class_to_genera
         Key classes and their Required Imports:
             {yaml.dump(LexContext()._prompts)} 
     
+    
+        Usage example:
+            ```
+            def ClassModel(LexModel):
+                # Implement fields here
+                # Foreign key relationship should be used according to the data sample from: **Project Input and Output Files**
+                # classId = models.ForeignKey(ClassModel2, on_delete=models.CASCADE))
+                # Example of wrong foreign key:  models.ForeignKey('<ProjectName>.<Folder>.ClassModel2', on_delete=models.CASCADE) Write only the class name
+                
+            def ClassModelUpload(CalculationModel):
+                # Implement fields here
+                # XLSXField here for file upload
+                
+                def calculate(self):
+                    logger = LexLogger().builder(level=LexLogLevel.INFO, flushing=True)
+                    logger.add_heading("ClassModel Data Upload", level=2)
+                    try:
+                        # Implement the calculation logic here
+                    except Exception as e:
+                        logger.add_paragraph(f"Error processing ClassModel data: str(e)")
+                        raise e
+                        
+            def OutputReport(CalculationModel):
+                # Implement fields here
+                # XLSXField here for file report (Please don't forget this field in every CalculationModel)
+                
+                def calculate(self):
+                    logger = LexLogger().builder(level=LexLogLevel.INFO, flushing=True) 
+                    # Implement the logic here
+                    
+    
     SPECIFICATIONS:
         Project Overview:
             {project.overview}
