@@ -1,0 +1,21 @@
+# Full Example: https://github.com/geekan/MetaGPT/blob/main/config/config2.example.yaml
+# Reflected Code: https://github.com/geekan/MetaGPT/blob/main/metagpt/config2.py
+llm:
+  api_type: 'azure'
+  base_url: 'https://lund-openai-instance-ch.openai.azure.com/'
+  api_key: '27df41c639474879886a54d5c542b3ea'
+  api_version: '2023-03-15-preview' # such as '2024-03-01-preview'
+  model: 'lund-gpt-4o'
+
+
+# llm:
+#   base_url: 'https://api.groq.com/openai/v1'
+#   api_key: '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'
+#   model: 'llama-3.1-70b-versatile'
+
+embedding:
+  api_type: "azure"
+  base_url: "https://lund-openai-instance-eastus.openai.azure.com/"
+  api_key: "0c211119a6624d38a367bc9f79e148b2"
+  api_version: "2023-05-15"
+  model: "text-embedding-3-large"

@@ -1,6 +1,6 @@
 setuptools
 wheel
-django~=4.1.10
+django
 django-cors-headers
 djangorestframework-simplejwt
 djangorestframework-api-key @ git+https://github.com/LundIT/djangorestframework-api-key
