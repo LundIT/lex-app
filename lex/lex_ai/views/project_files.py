@@ -3,8 +3,6 @@ from rest_framework.views import APIView
 from lex.lex_ai.models.Project import Project
 from lex.lex_ai.models.ProjectInputFiles import ProjectInputFiles
 from lex.lex_ai.models.ProjectOutputFiles import ProjectOutputFiles
-from django.db import transaction
-from django.core.exceptions import ValidationError
 import json
 from rest_framework.permissions import IsAuthenticated
 from rest_framework_api_key.permissions import HasAPIKey

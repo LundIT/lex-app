@@ -1,8 +1,5 @@
-import os
-from io import BytesIO
-
 from asgiref.sync import sync_to_async
-from django.http import JsonResponse, StreamingHttpResponse
+from django.http import JsonResponse, StreamingHttpResponse, HttpResponse
 from rest_framework.permissions import IsAuthenticated
 from rest_framework_api_key.permissions import HasAPIKey
 from lex.lex_ai.metagpt.generate_project_structure import generate_project_structure
@@ -11,12 +8,14 @@ from adrf.views import APIView
 from lex.lex_ai.utils import global_message_stream
 import asyncio
 
+
 class ProjectStructure(APIView):
     permission_classes = [IsAuthenticated | HasAPIKey]
 
     async def get(self, request, *args, **kwargs):
         project = await sync_to_async(Project.objects.first)()
         structure = project.structure
+        print(structure)
         return JsonResponse({'structure': structure})
 
 
@@ -49,6 +48,8 @@ class ProjectStructure(APIView):
         asyncio.create_task(generate_project_structure(overview, file_structure, project, user_feedback))
 
         return response
+
+
 
     async def patch(self, request, *args, **kwargs):
         converted_data = {}

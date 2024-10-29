@@ -2,7 +2,6 @@
 import ast
 import logging
 import time
-import uuid
 
 import mistune
 import pandas as pd
@@ -11,15 +10,7 @@ from django.conf import settings
 from lex.lex_app.LexLogger.WebSockerHandler import WebSocketHandler
 from lex.lex_app.decorators.LexSingleton import LexSingleton
 from lex.lex_app.logging.CalculationLog import CalculationLog
-
-
-class LexLogLevel:
-    VERBOSE = 5
-    DEBUG = 10
-    INFO = 20
-    WARNING = 30
-    ERROR = 40
-    CRITICAL = 50
+from lex_app.LexLogger.LexLogLevel import LexLogLevel
 
 
 @LexSingleton
@@ -273,3 +264,5 @@ class LexLogger:
 
     def critical(self, message):
         self.logger.critical(message)
+
+

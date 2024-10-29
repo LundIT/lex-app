@@ -1,68 +1,76 @@
+import yaml
+
 from lex.lex_ai.metagpt.prompts.LexPrompts import LexPrompts
-import asyncio
-import re
-
 from asgiref.sync import sync_to_async
-from metagpt.actions import Action
-from metagpt.roles import Role
-from metagpt.roles.di.data_interpreter import DataInterpreter
-from lex.lex_ai.metagpt.roles.LLM import LLM
-import json
-import json5
-
-from lex.lex_ai.rag.rag import RAG
-from metagpt.schema import Message
 from lex.lex_ai.utils import global_message_queue
+from lex_ai.metagpt.LexContext import LexContext
 
-def generate_project_code_prompt(project, lex_app_context, code, class_to_generate, user_feedback=""):
+
+def generate_project_code_prompt(project, lex_app_context, code, class_to_generate, user_feedback="", import_pool=""):
     prompt: str = f"""
-    
     Lex App Context:
-    {lex_app_context}
+        Key classes and their Required Imports:
+            {yaml.dump(LexContext()._prompts)} 
     
     SPECIFICATIONS:
+        Project Overview:
+            {project.overview}
     
-    Project Overview:
-    {project.overview}
+        Project Functionalities:
+            {project.functionalities}
+        
+        Project Models and Fields:
+            ```
+            {project.models_fields}
+            ```
+        Project Business Logic Calculations:
+            {project.business_logic_calcs}
+        
+        Project Structure:
+            ```
+            {project.detailed_structure}
+            ```
+        
+        Project Input and Output Files:
+            ```
+            {project.files_with_analysis}
+            ```
+            
+    Inner Import Pool:
+    {import_pool} 
     
-    Project Input and Output Files:
-    {project.files_with_analysis}
-    
-    Project Structure:
-    {project.detailed_structure}
-    
-    Project Functionalities:
-    {project.functionalities}
-    
-    Project Models and Fields:
-    {project.models_fields}
-    
-    Project Business Logic Calculations:
-    {project.business_logic_calcs}
     
     Project Requirement: 
-    {LexPrompts.PROMPT_REQUIREMENT}
+        {LexPrompts().get_prompt("PROMPT_REQUIREMENT")}
     
-    # **Available code:**
+    
+    Generation requirement:
+        Before starting to generate the code, please read the following requirements:
+            1. Only generate the next class and then stop generating.
+            2. Use foreign key relationship for according to the data sample from: **Project Input and Output Files**
+            2. No class Meta is allowed
+            3. Don't use self.is_calculated or any implementation detail of LexApp class
+            4. Use imports <Projectname>.<InBetweenFolders>.<class_name> or <Projectname>.<InBetweenFolders>.<function_name>
+            5. Implement every method
+            6. Use python convention for class names
+            7. ONLY USE COLUMN NAMES FROM THE FILES INPUT AND OUTPUT CONTENT (THIS IS EXTREMELY IMPORTANT)
+            8. You will get the folder hierarchy and the file names from the project structure (KEEP THAT IN MIND!!)
+            9. start with and no other than ### path/to/class.py\nclass ClassName:
+            10. Use import pool for importing classes of the project
+            11. Calculation logic should be filled and implemented even if not provided in the project structure
+    
+    {"User Feedback:" if user_feedback else ""}
+    {user_feedback}
+    
+    Already Generated Code: 
         {code}
     
-    Current Project Generated Code:
-    {"This is the first time for this query, there is no project code." if not user_feedback else project.generated_code}
+    The next class to generate is: {class_to_generate[0]}
+    The class path is: {class_to_generate[1]}
     
-    User Feedback:
-    {"This is the first time for this query, there is no user feedback." if not user_feedback else user_feedback}
-           
-    Generation requirement. Before starting to generate the code, please read the following requirements:
-    1. Only generate the next class and then stop generating.
-    2. No class Meta is allowed
-    3. Don't use self.is_calculated
-    4. Use imports ProjectName.<class_name> or ProjectName.<function_name>
-    5. Implement everything method
-    6. Use python convention for class names
-    
-    The next class to generate is: {class_to_generate}
-    
+    [START GENERATING CODE]
     """
+    print(prompt)
 
     return prompt
 

@@ -1,12 +1,8 @@
-import os
-from io import BytesIO
-
 from asgiref.sync import sync_to_async
 from django.http import JsonResponse, StreamingHttpResponse
 from lex_ai.metagpt.generate_project_code import generate_project_code
 from rest_framework.permissions import IsAuthenticated
 from rest_framework_api_key.permissions import HasAPIKey
-from lex.lex_ai.metagpt.generate_project_structure import generate_project_structure
 from lex.lex_ai.models.Project import Project
 from adrf.views import APIView
 from lex.lex_ai.utils import global_message_stream

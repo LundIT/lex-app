@@ -1,10 +1,6 @@
-import os
-from io import BytesIO
-
 from asgiref.sync import sync_to_async
 from django.http import JsonResponse, StreamingHttpResponse
 from lex_ai.metagpt.generate_business_logic import generate_business_logic
-from openai import project
 from rest_framework.permissions import IsAuthenticated
 from adrf.views import APIView
 from rest_framework_api_key.permissions import HasAPIKey

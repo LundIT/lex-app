@@ -1,24 +1,14 @@
-import os
-from io import BytesIO
-
 from asgiref.sync import sync_to_async
-from django.http import JsonResponse, StreamingHttpResponse
+from django.http import JsonResponse
 from lex_ai.metagpt.generate_project_functionalities import generate_project_functionalities
 from rest_framework.permissions import IsAuthenticated
 from adrf.views import APIView
 from rest_framework_api_key.permissions import HasAPIKey
 
-from metagpt.actions import Action
-from metagpt.roles import Role
-from metagpt.schema import Message
-from metagpt.team import Team
-from metagpt.context import Context
 from django.http import StreamingHttpResponse
 
 from lex.lex_ai.models.Project import Project
-from datetime import datetime
 
-from metagpt.config2 import Config, config
 from lex.lex_ai.utils import global_message_stream
 import asyncio
 

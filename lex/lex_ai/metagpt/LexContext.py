@@ -1,15 +1,13 @@
-### lex_app/prompts/prompts.py
 import yaml
 from pathlib import Path
-
-class LexPrompts:
+class LexContext:
     def __init__(self):
         self._prompts = {}
         self._load_prompts()
 
     def _load_prompts(self):
         """Load prompts from the YAML file."""
-        prompts_path = Path(__file__).parent / 'prompts.yaml'
+        prompts_path = Path(__file__).parent / 'lex_app_context.yaml'
         try:
             with open(prompts_path, 'r', encoding='utf-8') as file:
                 self._prompts = yaml.safe_load(file)
