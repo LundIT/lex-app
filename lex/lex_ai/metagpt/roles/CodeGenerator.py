@@ -11,6 +11,7 @@ import json
 from lex.lex_ai.rag.rag import RAG
 from metagpt.schema import Message
 from lex.lex_ai.metagpt.prompts.LexPrompts import LexPrompts
+import os
 
 class CodeGenerator(Role):
     name: str = "CodeGenerator"
