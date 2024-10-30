@@ -4,12 +4,12 @@ from lex_ai.metagpt.generate_project_functionalities import generate_project_fun
 from rest_framework.permissions import IsAuthenticated
 from adrf.views import APIView
 from rest_framework_api_key.permissions import HasAPIKey
+from lex.lex_ai.helpers.StreamProcessor import StreamProcessor
 
 from django.http import StreamingHttpResponse
 
 from lex.lex_ai.models.Project import Project
 
-from lex.lex_ai.utils import global_message_stream
 import asyncio
 
 class ProjectFunctionalities(APIView):
@@ -27,7 +27,7 @@ class ProjectFunctionalities(APIView):
         user_feedback = request.data.get('user_feedback', "")
         files_with_analysis = project.files_with_analysis
         detailed_structure = project.detailed_structure
-        response = StreamingHttpResponse(global_message_stream(), content_type="text/plain")
+        response = StreamingHttpResponse(StreamProcessor().process_stream(), content_type="text/plain")
         asyncio.create_task(generate_project_functionalities(detailed_structure, files_with_analysis, project, user_feedback))
         return response
 

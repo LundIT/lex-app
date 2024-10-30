@@ -5,7 +5,7 @@ from adrf.views import APIView
 from rest_framework_api_key.permissions import HasAPIKey
 from lex.lex_ai.metagpt.generate_model_structure import generate_model_structure
 from lex.lex_ai.models.Project import Project
-from lex.lex_ai.utils import global_message_stream
+from lex.lex_ai.helpers.StreamProcessor import StreamProcessor
 import asyncio
 
 class ProjectModelFields(APIView):
@@ -21,7 +21,7 @@ class ProjectModelFields(APIView):
         project = await sync_to_async(Project.objects.first)()
         user_feedback = request.data.get('user_feedback', "")
         detailed_structure = project.detailed_structure
-        response = StreamingHttpResponse(global_message_stream(), content_type="text/plain")
+        response = StreamingHttpResponse(StreamProcessor().process_stream(), content_type="text/plain")
         asyncio.create_task(generate_model_structure(detailed_structure, project, user_feedback))
         return response
 

@@ -2,7 +2,8 @@ from asgiref.sync import  sync_to_async
 from lex.lex_ai.metagpt.roles.LLM import LLM
 
 from lex.lex_ai.rag.rag import RAG
-from lex.lex_ai.utils import global_message_queue
+from lex.lex_ai.helpers.StreamProcessor import StreamProcessor
+
 
 async def generate_business_logic(project_structure, files_with_explanations, models_and_fields, project, user_feedback=""):
     role = LLM()
@@ -55,5 +56,5 @@ async def generate_business_logic(project_structure, files_with_explanations, mo
     rsp = (await role.run(prompt)).content
     project.business_logic_calcs = rsp
     await sync_to_async(project.save)()
-    await global_message_queue.put("DONE")
+    await StreamProcessor.global_message_queue.put("DONE")
     return rsp

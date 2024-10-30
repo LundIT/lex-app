@@ -1,8 +1,8 @@
 from asgiref.sync import sync_to_async
 from lex.lex_ai.metagpt.roles.LLM import LLM
 import json
-from lex.lex_ai.utils import global_message_queue
 from lex_ai.metagpt.get_files_to_generate import get_files_to_generate
+from lex.lex_ai.helpers.StreamProcessor import StreamProcessor
 
 
 async def generate_model_structure(project_structure, project, user_feedback=""):
@@ -79,5 +79,5 @@ async def generate_model_structure(project_structure, project, user_feedback="")
 
     await get_files_to_generate(project)
 
-    await global_message_queue.put("DONE")
+    await StreamProcessor.global_message_queue.put("DONE")
     return json.loads(rsp.content)

@@ -1,9 +1,9 @@
 from asgiref.sync import  sync_to_async
 from lex.lex_ai.metagpt.roles.LLM import LLM
-from lex.lex_ai.utils import global_message_queue
-
+from lex.lex_ai.helpers.StreamProcessor import StreamProcessor
 
 async def generate_project_functionalities(project_structure, files_with_explanations, project, user_feedback=""):
+
     role = LLM()
 
     prompt = f"""
@@ -31,5 +31,5 @@ async def generate_project_functionalities(project_structure, files_with_explana
     rsp = (await role.run(prompt)).content
     project.functionalities = rsp
     await sync_to_async(project.save)()
-    await global_message_queue.put("DONE")
+    await StreamProcessor.global_message_queue.put("DONE")
     return rsp

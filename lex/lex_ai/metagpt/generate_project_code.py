@@ -2,9 +2,8 @@ import yaml
 
 from lex.lex_ai.metagpt.prompts.LexPrompts import LexPrompts
 from asgiref.sync import sync_to_async
-from lex.lex_ai.utils import global_message_queue
 from lex_ai.metagpt.LexContext import LexContext
-
+from lex.lex_ai.helpers.StreamProcessor import StreamProcessor
 
 def generate_project_code_prompt(project, lex_app_context, code, class_to_generate, user_feedback="", import_pool=""):
     prompt: str = f"""
@@ -57,7 +56,7 @@ def generate_project_code_prompt(project, lex_app_context, code, class_to_genera
             8. You will get the folder hierarchy and the file names from the project structure (KEEP THAT IN MIND!!)
             9. start with and no other than ### path/to/class.py\nclass ClassName:
             10. Use import pool for importing classes of the project
-            11. Calculation logic should be filled and implemented even if not provided in the project structure
+            11. Calculation logic should be filled and implemented even if not provided in the project structure.
     
     {"User Feedback:" if user_feedback else ""}
     {user_feedback}
@@ -70,7 +69,6 @@ def generate_project_code_prompt(project, lex_app_context, code, class_to_genera
     
     [START GENERATING CODE]
     """
-    print(prompt)
 
     return prompt
 
@@ -83,5 +81,5 @@ async def generate_project_code(project, user_feedback=""):
 
     project.generated_code = rsp.content
     await sync_to_async(project.save)()
-    await global_message_queue.put("DONE")
+    await StreamProcessor.global_message_queue.put("DONE")
     return rsp.content

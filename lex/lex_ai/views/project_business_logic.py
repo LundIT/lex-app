@@ -4,8 +4,8 @@ from lex_ai.metagpt.generate_business_logic import generate_business_logic
 from rest_framework.permissions import IsAuthenticated
 from adrf.views import APIView
 from rest_framework_api_key.permissions import HasAPIKey
-from lex.lex_ai.utils import global_message_stream
 import asyncio
+from lex.lex_ai.helpers.StreamProcessor import StreamProcessor
 from lex.lex_ai.models.Project import Project
 
 class ProjectBusinessLogic(APIView):
@@ -24,7 +24,7 @@ class ProjectBusinessLogic(APIView):
         files_with_analysis = project.files_with_analysis
         detailed_structure = project.detailed_structure
         models_and_fields = project.models_fields
-        response = StreamingHttpResponse(global_message_stream(), content_type="text/plain")
+        response = StreamingHttpResponse(StreamProcessor().process_stream(), content_type="text/plain")
         asyncio.create_task(generate_business_logic(detailed_structure, files_with_analysis, models_and_fields, project, user_feedback))
         return response
 

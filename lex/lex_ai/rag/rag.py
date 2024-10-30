@@ -37,7 +37,7 @@ class FunctionInfo:
     def __str__(self):
         return f"Function: {self.name}\nDocstring: {self.docstring}\nSource Code:\n{self.source_code}"
 class RAG:
-    LEX_APP_DIR = "/home/hazem/LUND_IT/lex_app_submodels/lex_ai/DemoWindparkConsolidation/venv/src/lex-app"
+    LEX_APP_DIR = os.getenv("METAGPT_PROJECT_ROOT")
     def __init__(self):
         self.tables = []
         self.index = ""
@@ -229,12 +229,3 @@ class TopLevelVisitor(ast.NodeVisitor):
             )
             self.functions.append(function_info)
         self.generic_visit(node)
-
-
-
-rag = RAG()
-i, j = rag.memorize_dir(RAG.LEX_APP_DIR)
-
-lex_app_context = rag.query_code("CalculationModel", i, j, top_k=1)[0]
-
-print(lex_app_context)
