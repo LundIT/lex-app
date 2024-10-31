@@ -1,5 +1,6 @@
 import os
 
+from lex_ai.helpers.StreamProcessor import StreamProcessor
 from lex_ai.metagpt.ProjectGenerator import ProjectGenerator
 from lex_ai.metagpt.actions.GenerateCode import GenerateCode
 
