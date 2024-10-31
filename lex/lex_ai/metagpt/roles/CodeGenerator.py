@@ -1,6 +1,6 @@
 import os
 
-from lex_ai.helpers.StreamProcessor import StreamProcessor
+from lex.lex_ai.helpers.StreamProcessor import StreamProcessor
 from lex_ai.metagpt.ProjectGenerator import ProjectGenerator
 from lex_ai.metagpt.actions.GenerateCode import GenerateCode
 
@@ -10,7 +10,7 @@ from lex.lex_ai.metagpt.prompts.LexPrompts import LexPrompts
 
 from metagpt.roles.role import Role
 
-from lex_ai.metagpt.generate_test_for_code import generate_test_for_code
+from lex.lex_ai.metagpt.generate_test_for_code import generate_test_for_code
 
 
 class CodeGenerator(Role):
@@ -28,8 +28,7 @@ class CodeGenerator(Role):
         print("-----------------------------------------------------------------------------------------------------")
         print("------------------------------------Code Generator---------------------------------------------------")
         project_name = "DemoWindparkConsolidation"
-        project_generator = ProjectGenerator(project_name)
-
+        # project_generator = ProjectGenerator(project_name)
 
         lex_app_context = self.get_lex_app_context("Lex project")
         classes_to_generate = self.project.classes_and_their_paths.items()
@@ -45,33 +44,14 @@ class CodeGenerator(Role):
                                                      generated_code, class_to_generate, self.user_feedback, import_pool) + "\n\n"
 
             print("Classes to generate: ", class_to_generate)
-            project_generator.add_file(class_to_generate[1], code)
+            # project_generator.add_file(class_to_generate[1], code)
             generated_code += code
 
 
         for class_to_generate in classes_to_generate:
             test = await generate_test_for_code(generated_code, self.project, import_pool, class_to_generate, test_code)
-            project_generator.add_file("Tests/" + class_to_generate[0] + "Test.py", test)
+            # project_generator.add_file("Tests/" + class_to_generate[0] + "Test.py", test)
             test_code += test
-
-        # generate tests
-
-
-
-
-
-        # python_codes = parse_codes_with_filenames(generated_code)
-        #
-        # # Outputting the results
-        # for file_name, code in python_codes.items():
-        #     # Create a Path object
-        #     file_path = Path(f"generated_files/{self.context.kwargs.get('timestamp')}/" + file_name)
-        #
-        #     # Create parent directories if they don't exist
-        #     file_path.parent.mkdir(parents=True, exist_ok=True)
-        #
-        #     # Write to the file
-        #     file_path.write_text(code)
 
         message = Message(content=generated_code, role=self.profile, cause_by=type(self.rc.todo))
         return message
