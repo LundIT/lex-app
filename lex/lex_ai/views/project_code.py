@@ -1,3 +1,5 @@
+import os
+
 from asgiref.sync import sync_to_async
 from django.http import JsonResponse, StreamingHttpResponse
 from lex.lex_ai.helpers.StreamProcessor import StreamProcessor
@@ -39,3 +41,4 @@ class ProjectCode(APIView):
         await sync_to_async(project.save)()
 
         return JsonResponse({'message': 'Project code saved successfully'})
+

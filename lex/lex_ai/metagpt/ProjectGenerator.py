@@ -13,7 +13,7 @@ class ProjectGenerator:
             project_name: Name of the project
             base_dir: Optional base directory (defaults to current working directory)
         """
-        self.project_name = project_name
+        self.project_name =project_name
         self.base_dir = base_dir or os.getcwd()
         self.project_path = os.path.join(self.base_dir, project_name)
 
@@ -31,6 +31,8 @@ class ProjectGenerator:
         for dir_name in base_dirs:
             dir_path = os.path.join(self.project_path, dir_name)
             os.makedirs(dir_path, exist_ok=True)
+            init_path = os.path.join(dir_path, '__init__.py')
+            Path(init_path).touch()
 
         # Create base config files
         self._create_config_files()
@@ -114,13 +116,6 @@ build/
 
         # Create __init__.py files in all parent directories
         self._create_init_files(os.path.dirname(full_path))
-
-        # Create migrations folder if it's a models directory
-        if 'models' in normalized_path.lower():
-            migrations_path = os.path.join(os.path.dirname(self.project_path), 'migrations')
-            os.makedirs(migrations_path, exist_ok=True)
-            init_path = os.path.join(migrations_path, '__init__.py')
-            Path(init_path).touch()
 
         # Write the file content
         with open(full_path, 'w', encoding='utf-8') as f:

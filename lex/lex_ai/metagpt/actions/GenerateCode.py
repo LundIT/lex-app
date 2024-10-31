@@ -14,8 +14,8 @@ from metagpt.schema import Message
 class GenerateCode(Action):
     name: str = "GenerateCode"
 
-    async def run(self, project, lex_app_context: str, code: str, class_to_generate, user_feedback, import_pool):
-        prompt = generate_project_code_prompt(project, lex_app_context, code, class_to_generate, user_feedback, import_pool)
+    async def run(self, project, lex_app_context: str, code: str, class_to_generate, user_feedback, import_pool, stderr):
+        prompt = generate_project_code_prompt(project, lex_app_context, code, class_to_generate, user_feedback, import_pool, stderr)
 
         code = await self._aask(prompt, [
             "** [YOU ARE A SOFTWARE ENGINEER AND YOU ARE TASKED TO COMPLETE EVERYTHING IN THE PROJECT] **"

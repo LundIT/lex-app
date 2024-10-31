@@ -111,6 +111,99 @@ SPECIFICATIONS:
     Next test to generate is for class {class_to_generate}:
     """
 
-    rsp = (await role.run(prompt)).content
+
+    test_prompt = f"""
+I need comprehensive Django tests for my project. Here's the detailed context:
+
+## Model Under Test
+Class to test: {class_to_generate[0]}
+
+## Project Context
+0. Project Overview and Structure and functionalities:
+{project.overview}
+{project.detailed_structure}
+{project.functionalities}
+
+1. Model Definition:
+{generated_code}
+1.1 Imports to use for model definitions: 
+{import_pool}
+
+2. Data Processing:
+- Excel file upload handling
+- Data transformation logic
+- Report generation
+
+3. Sample Data Structure:
+{project.files_with_analysis}
+
+## Test Requirements
+
+Please generate Django test that cover:
+
+1. Model Testing:
+- Field validations (required fields, field types, constraints)
+- Foreign key relationships
+- Model methods
+- Data integrity
+
+2. Excel Processing:
+- File upload validation
+- Data parsing accuracy
+- Error handling for invalid data
+- Column mapping verification
+
+3. Business Logic:
+- Calculation accuracy
+- Data transformation correctness
+- Edge cases handling
+- Error scenarios
+
+4. Integration Testing:
+- End-to-end workflow
+- Database interactions
+- File I/O operations
+
+Technical Specifications:
+- Use django.test.TestCase
+- Include setUp and tearDown methods
+- Use appropriate test fixtures
+- Follow Django's testing best practices
+- Use assertQuerysetEqual for model comparisons
+- Implement mock objects for external dependencies
+
+Test Structure:
+```python
+from django.test import TestCase
+from django.core.files.uploadedfile import SimpleUploadedFile
+from unittest.mock import patch, MagicMock
+from decimal import Decimal
+import pandas as pd
+import io
+
+class [ModelName]Tests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        # Setup test data
+        pass
+
+    def setUp(self):
+        # Setup test environment
+        pass
+
+    def test_[specific_functionality](self):
+        # Test implementation
+        pass
+
+Generate Django the next django for my project following this exact format:
+### Tests/[ModelName]Test.py
+```python
+
+
+Only generate the test for the specified this class {class_to_generate[0]} and stop.
+[Test code here]
+    """
+
+    rsp = (await role.run(test_prompt)).content
     return rsp
 

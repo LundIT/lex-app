@@ -37,6 +37,12 @@ class FunctionInfo:
     def __str__(self):
         return f"Function: {self.name}\nDocstring: {self.docstring}\nSource Code:\n{self.source_code}"
 class RAG:
+    embeddings = AzureOpenAIEmbeddings(
+        model="text-embedding-3-large",
+        openai_api_version="2023-05-15",
+        azure_endpoint="https://lund-openai-instance-eastus.openai.azure.com",
+        api_key="0c211119a6624d38a367bc9f79e148b2"
+    )
     LEX_APP_DIR = os.getenv("METAGPT_PROJECT_ROOT")
     def __init__(self):
         self.tables = []
@@ -97,12 +103,7 @@ class RAG:
         return project_structure
 
     # Set up Azure OpenAI embeddings
-    embeddings = AzureOpenAIEmbeddings(
-        model="text-embedding-3-large",
-        openai_api_version="2023-05-15",
-        azure_endpoint="https://lund-openai-instance-eastus.openai.azure.com",
-        api_key="0c211119a6624d38a367bc9f79e148b2"
-    )
+
 
     def get_embeddings(self, text):
         return self.embeddings.embed_query(text)
