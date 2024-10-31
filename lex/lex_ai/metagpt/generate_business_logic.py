@@ -3,6 +3,9 @@ from lex.lex_ai.metagpt.roles.LLM import LLM
 
 from lex.lex_ai.rag.rag import RAG
 from lex.lex_ai.utils import global_message_queue
+from lex_ai.metagpt.LexContext import LexContext
+from lex_ai.metagpt.TestContext import TestContext
+
 
 async def generate_business_logic(project_structure, files_with_explanations, models_and_fields, project, user_feedback=""):
     role = LLM()
@@ -16,8 +19,10 @@ async def generate_business_logic(project_structure, files_with_explanations, mo
 
 
     prompt = f"""
+
     lex_app context:
-    {lex_app_context} 
+    {LexContext()._prompts} 
+     
 
     File content and their explanations:
     {files_with_explanations} 

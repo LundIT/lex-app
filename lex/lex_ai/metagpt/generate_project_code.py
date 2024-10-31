@@ -18,18 +18,19 @@ def generate_project_code_prompt(project, lex_app_context, code, class_to_genera
             def ClassModel(LexModel):
                 # Implement fields here
                 # Foreign key relationship should be used according to the data sample from: **Project Input and Output Files**
-                # classId = models.ForeignKey(ClassModel2, on_delete=models.CASCADE))
+                # classId = models.ForeignKey(ClassModel2, on_delete=models.CASCADE)
                 # Example of wrong foreign key:  models.ForeignKey('<ProjectName>.<Folder>.ClassModel2', on_delete=models.CASCADE) Write only the class name
+                # Example of wrong foreign key:  models.ForeignKey('ClassModel2', on_delete=models.CASCADE) It should be the class itself not a string
                 
             def ClassModelUpload(CalculationModel):
                 # Implement fields here
-                # XLSXField here for file upload
+                # XLSXField here for file upload (Mandatory field in every CalculationModel)
                 
                 def calculate(self):
                     logger = LexLogger().builder(level=LexLogLevel.INFO, flushing=True)
                     logger.add_heading("ClassModel Data Upload", level=2)
                     try:
-                        # Implement the calculation logic here
+                        # Implement the logic here (Should always be implemented, never forget the logic anywhere)
                     except Exception as e:
                         logger.add_paragraph(f"Error processing ClassModel data: str(e)")
                         raise e
@@ -40,7 +41,7 @@ def generate_project_code_prompt(project, lex_app_context, code, class_to_genera
                 
                 def calculate(self):
                     logger = LexLogger().builder(level=LexLogLevel.INFO, flushing=True) 
-                    # Implement the logic here
+                    # Implement the logic here (Should always be implemented, never forget the logic anywhere)
                     
     
     SPECIFICATIONS:

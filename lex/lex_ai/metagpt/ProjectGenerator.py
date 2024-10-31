@@ -104,7 +104,6 @@ build/
             content: Content of the file
         """
         content = list(self.parse_codes_with_filenames(content).items())[0][1]
-        print(content)
         # Normalize path separators
         normalized_path = file_path.replace('\\', '/').strip('/')
 
