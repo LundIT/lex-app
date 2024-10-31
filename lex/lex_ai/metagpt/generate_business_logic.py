@@ -2,6 +2,9 @@ from asgiref.sync import  sync_to_async
 from lex.lex_ai.metagpt.roles.LLM import LLM
 
 from lex.lex_ai.rag.rag import RAG
+from lex_ai.metagpt.LexContext import LexContext
+from lex_ai.metagpt.TestContext import TestContext
+
 from lex.lex_ai.helpers.StreamProcessor import StreamProcessor
 
 
@@ -17,8 +20,10 @@ async def generate_business_logic(project_structure, files_with_explanations, mo
 
 
     prompt = f"""
+
     lex_app context:
-    {lex_app_context} 
+    {LexContext()._prompts} 
+     
 
     File content and their explanations:
     {files_with_explanations} 

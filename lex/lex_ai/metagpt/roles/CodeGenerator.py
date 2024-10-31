@@ -6,9 +6,12 @@ from lex_ai.metagpt.actions.GenerateCode import GenerateCode
 from lex.lex_ai.rag.rag import RAG
 from metagpt.schema import Message
 from lex.lex_ai.metagpt.prompts.LexPrompts import LexPrompts
-from lex.lex_ai.helpers.StreamProcessor import StreamProcessor
 
 from metagpt.roles.role import Role
+
+from lex_ai.metagpt.generate_test_for_code import generate_test_for_code
+
+
 class CodeGenerator(Role):
     name: str = "CodeGenerator"
     profile: str = "Expert in generating code based on architecture and specifications"
@@ -33,16 +36,26 @@ class CodeGenerator(Role):
         import_pool = "\n".join([f"Class {class_name}\n\tImporPath:from {project_name}.{path.replace(os.sep, '.').rstrip('.py')} import {class_name}" for class_name, path in classes_to_generate])
 
         generated_code = ""
-
+        test_code = ""
         for class_to_generate in classes_to_generate:
             path = class_to_generate[1].replace('\\', '/').strip('/')
             await StreamProcessor.global_message_queue.put(f"code_file_path:{path}\n")
             code = await self.rc.todo.run(self.project, lex_app_context,
                                                      generated_code, class_to_generate, self.user_feedback, import_pool) + "\n\n"
 
-
-            # project_generator.add_file(class_to_generate[1], code)
+            print("Classes to generate: ", class_to_generate)
+            project_generator.add_file(class_to_generate[1], code)
             generated_code += code
+
+
+        for class_to_generate in classes_to_generate:
+            test = await generate_test_for_code(generated_code, self.project, import_pool, class_to_generate, test_code)
+            project_generator.add_file("Tests/" + class_to_generate[0] + "Test.py", test)
+            test_code += test
+
+        # generate tests
+
+
 
 
 
