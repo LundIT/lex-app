@@ -32,7 +32,9 @@ class StreamProcessor:
 
             while True:
                 message = await self.queue.get()
-
+                if message.startswith("code_file_path"):
+                    yield message
+                    continue
                 if message == 'DONE':
                     break
 
