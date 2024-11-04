@@ -14,7 +14,7 @@ class ProjectGenerator:
             base_dir: Optional base directory (defaults to current working directory)
         """
         self.project_name = project_name
-        self.base_dir = base_dir or os.getcwd()
+        self.base_dir = "/Users/melihsunbul/Documents"
         self.project_path = os.path.join(self.base_dir, project_name)
 
         # Create initial project structure

@@ -10,6 +10,7 @@ async def generate_model_structure(project_structure, project, user_feedback="")
 
     example = """
     {
+    "Folder1": {
       "Class1": {
         "id": "AutoField (Primary Key)",
         "class_to_another_class": "ForeignKey (to self)",
@@ -28,6 +29,8 @@ async def generate_model_structure(project_structure, project, user_feedback="")
         "area": "FloatField",
         ...otherfields
       },
+      },
+        "Folder2": {
       "report_cashflow_expample": {
         "id": "AutoField (Primary Key)",
         "upload_id": "IntegerField",
@@ -38,12 +41,15 @@ async def generate_model_structure(project_structure, project, user_feedback="")
         "cashflow": "FloatField",
         ...otherfields
       },
+      },
+      "Folder3": {
       "Downloads": {
         "id": "AutoField (Primary Key)",
         "report": "XLSXField",
         ...otherfields
       },
-      ...otherclasses
+      },
+      ...otherfoldersandclasses
     } 
     """
 
@@ -55,14 +61,14 @@ async def generate_model_structure(project_structure, project, user_feedback="")
     5. Do not include anything apart from the fields such as descriptions or methods.
     6. Do not write otherFields, instead write every field explicitly.
 
-    real json: 
+    Project Structure: 
     {project_structure}
 
     Example:
     {example}
     
-    Current Project Structure:
-    {"This is the first time for this query, there is no project structure." if not user_feedback else project.models_fields}
+    Current Project Model Structure:
+    {"This is the first time for this query, there is no project model structure." if not user_feedback else project.models_fields}
     
     User Feedback:
     {"This is the first time for this query, there is no user feedback." if not user_feedback else user_feedback}

@@ -12,8 +12,8 @@ from lex.lex_ai.rag.rag import RAG
 from metagpt.schema import Message
 
 class LLM(Role):
-    name: str = "DIResult"
-    profile: str = "Gets the result of the DataInterpreter"
+    name: str = "LLM"
+    profile: str = "Gets the result of the LLM output"
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)

@@ -9,7 +9,7 @@ from metagpt.schema import Message
 from lex.lex_ai.metagpt.prompts.LexPrompts import LexPrompts
 
 from metagpt.roles.role import Role
-
+from lex.lex_ai.helpers.StreamProcessor import StreamProcessor
 from lex.lex_ai.metagpt.generate_test_for_code import generate_test_for_code
 
 
@@ -28,7 +28,7 @@ class CodeGenerator(Role):
         print("-----------------------------------------------------------------------------------------------------")
         print("------------------------------------Code Generator---------------------------------------------------")
         project_name = "DemoWindparkConsolidation"
-        # project_generator = ProjectGenerator(project_name)
+        project_generator = ProjectGenerator(project_name)
 
         lex_app_context = self.get_lex_app_context("Lex project")
         classes_to_generate = self.project.classes_and_their_paths.items()
@@ -44,14 +44,14 @@ class CodeGenerator(Role):
                                                      generated_code, class_to_generate, self.user_feedback, import_pool) + "\n\n"
 
             print("Classes to generate: ", class_to_generate)
-            # project_generator.add_file(class_to_generate[1], code)
+            project_generator.add_file(class_to_generate[1], code)
             generated_code += code
 
 
-        for class_to_generate in classes_to_generate:
-            test = await generate_test_for_code(generated_code, self.project, import_pool, class_to_generate, test_code)
-            # project_generator.add_file("Tests/" + class_to_generate[0] + "Test.py", test)
-            test_code += test
+        # for class_to_generate in classes_to_generate:
+        #     test = await generate_test_for_code(generated_code, self.project, import_pool, class_to_generate, test_code)
+        #     # project_generator.add_file("Tests/" + class_to_generate[0] + "Test.py", test)
+        #     test_code += test
 
         message = Message(content=generated_code, role=self.profile, cause_by=type(self.rc.todo))
         return message

@@ -27,28 +27,9 @@ class ProjectModelFields(APIView):
 
     async def patch(self, request, *args, **kwargs):
         project = await sync_to_async(Project.objects.first)()
-        models_fields_data = request.data.get('models', {})
-        result = {}
+        model_and_fields_data = request.data.get('model_and_fields', {})
 
-        for model in models_fields_data.values():
-            model_name = model.get("modelName")
-            fields = model.get("fields", {})
-
-            # Construct the fields dictionary with additionalInfo if available
-            model_fields = {}
-            for field in fields.values():
-                field_name = field["fieldName"]
-                field_type = field["fieldType"]
-
-                # Check if additionalInfo exists and include it if present
-                if "additionalInfo" in field:
-                    model_fields[field_name] = f"{field_type} (to {field['additionalInfo']})"
-                else:
-                    model_fields[field_name] = field_type
-
-            result[model_name] = model_fields
-
-        project.models_fields = result
+        project.models_fields = model_and_fields_data
         await sync_to_async(project.save)()
 
         return JsonResponse({'message': 'Models and fields are saved successfully'})
