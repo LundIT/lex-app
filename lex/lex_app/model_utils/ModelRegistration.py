@@ -26,7 +26,7 @@ class ModelRegistration:
                 adminSite.register([model])
 
                 if issubclass(model, CalculationModel):
-                    if os.getenv("CALLED_FROM_START_COMMAND"):
+                    if os.getenv("CALLED_FROM_START_COMMAND") == "True":
                         @sync_to_async
                         def reset_instances_with_aborted_calculations():
                             if not os.getenv("CELERY_ACTIVE"):

@@ -529,7 +529,7 @@ LOGGING = {
     },
     'root': {
         'handlers': ['console'],
-        'level': os.getenv("LOG_LEVEL", "DEBUG"),
+        'level': os.getenv("LOG_LEVEL", "INFO"),
     }
 }
 DATA_UPLOAD_MAX_MEMORY_SIZE=None

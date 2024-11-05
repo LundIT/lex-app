@@ -40,15 +40,6 @@ class ProjectGenerator:
     def _create_config_files(self):
         """Creates basic configuration files"""
         config_files = {
-            'config/settings.py': '''
-# Project Settings
-DEBUG = True
-DATABASE = {
-    'name': 'default',
-    'engine': 'django.db.backends.sqlite3',
-}
-''',
-            'config/__init__.py': '',
             '__init__.py': '',
             'README.md': f'# {self.project_name}\n\nAuto-generated project structure',
             '.gitignore': '''

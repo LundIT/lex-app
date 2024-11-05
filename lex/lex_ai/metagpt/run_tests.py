@@ -33,7 +33,7 @@ def execute_tests(project_name, test_file):
         )
 
         if test_file:
-            failures = runner.run_tests([f'{project_name}.Tests.{test_file}'])
+            failures = runner.run_tests([f'{project_name}.Tests.{test_file.split(".")[0]}'])
         else:
             failures = runner.run_tests([f'{project_name}.Tests'])
 
