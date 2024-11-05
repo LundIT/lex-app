@@ -2,8 +2,8 @@ from asgiref.sync import  sync_to_async
 from lex.lex_ai.metagpt.roles.LLM import LLM
 
 from lex.lex_ai.rag.rag import RAG
-from lex_ai.metagpt.LexContext import LexContext
-from lex_ai.metagpt.TestContext import TestContext
+from lex.lex_ai.metagpt.LexContext import LexContext
+from lex.lex_ai.metagpt.TestContext import TestContext
 
 from lex.lex_ai.helpers.StreamProcessor import StreamProcessor
 

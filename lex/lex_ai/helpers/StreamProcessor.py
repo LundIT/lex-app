@@ -3,11 +3,13 @@ from typing import Optional
 
 class StreamProcessor:
     global_message_queue = asyncio.Queue()
+    dict_message_queues = asyncio.Queue()
     def __init__(
             self,
             delimiter: Optional[str] = None,
             end_delimiter: Optional[str] = None,
             max_buffer: int = 1024,
+            # queue: Optional[asyncio.Queue] = global_message_queue
 
     ):
         self.delimiter = delimiter

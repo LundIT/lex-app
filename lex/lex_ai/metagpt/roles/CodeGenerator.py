@@ -17,7 +17,7 @@ from metagpt.schema import Message
 from lex.lex_ai.metagpt.prompts.LexPrompts import LexPrompts
 
 from metagpt.roles.role import Role
-
+from lex.lex_ai.helpers.StreamProcessor import StreamProcessor
 from lex.lex_ai.metagpt.generate_test_for_code import generate_test_for_code
 from lex.lex_ai.metagpt.run_tests import run_tests, get_failed_test_classes
 
