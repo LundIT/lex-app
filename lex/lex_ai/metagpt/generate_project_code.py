@@ -5,7 +5,21 @@ from asgiref.sync import sync_to_async
 from lex_ai.metagpt.LexContext import LexContext
 from lex.lex_ai.helpers.StreamProcessor import StreamProcessor
 
-def generate_project_code_prompt(project, lex_app_context, code, class_to_generate, user_feedback="", import_pool=""):
+def generate_project_code_prompt(project, lex_app_context, code, class_to_generate, user_feedback="", import_pool="", stderr=None):
+    stderr_str = '' if not stderr else f"""
+    The class failed this test:
+    test code:
+    {stderr['test_code']}
+    
+    class code:
+    {stderr['class_code']}
+     
+    error message:
+    {stderr['error_message']} 
+    """
+
+
+
     prompt: str = f"""
     Lex App Context:
         Key classes and their Required Imports:
@@ -95,12 +109,19 @@ def generate_project_code_prompt(project, lex_app_context, code, class_to_genera
     
     Already Generated Code: 
         {code}
-    
+     
     The next class to generate is: {class_to_generate[0]}
     The class path is: {class_to_generate[1]}
     
+    {stderr_str}
+    
+    Please just regenerate the class and stop according to the test and error code and then stop:
+    
     [START GENERATING CODE]
     """
+
+
+
 
     return prompt
 
