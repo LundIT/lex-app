@@ -86,6 +86,8 @@ PROMPT_REQUIREMENT: |
     15. Double check the imports from the lex_app context or if you use any foreign key relationship
     
 
+     
+
 REFINED_PROMPT_REQUIREMENT: |
     1. **Full Implementation Required**: You are tasked with generating...
     # Copy the full content from REFINED_PROMPT_REQUIREMENT in the original class

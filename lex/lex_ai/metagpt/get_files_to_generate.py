@@ -35,6 +35,7 @@ async def get_files_to_generate(project):
     """
 
     rsp = (await role.run(prompt)).content
+    import pprint
 
     project.classes_and_their_paths = json.loads(rsp)
     await sync_to_async(project.save)()

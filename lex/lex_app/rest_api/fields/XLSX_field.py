@@ -118,7 +118,7 @@ class XLSXField(FileField):
                 if len(df.columns) > 0:
                     worksheet.autofilter(0, 0, len(df), idx_length + len(df.columns)-1)
 
-        writer.save()
+        # writer.save()
         writer.close()
         excel_file.seek(0)
         self.save(path, content=File(excel_file), save=False)

@@ -56,10 +56,11 @@ async def generate_model_structure(project_structure, project, user_feedback="")
     prompt = f"""
     1. Given a json that has all entities and relationships you will create react json object exactly like given below.
     2. As field types, be careful to use correct names from builtin Django model fields.
-    3. No ```json
-    4. Use double quotes for keys and values
-    5. Do not include anything apart from the fields such as descriptions or methods.
-    6. Do not write otherFields, instead write every field explicitly.
+    3. Models relationships are mandatory, you should use ForeignKey for relationships.
+    4. No ```json
+    5. Use double quotes for keys and values
+    6. Do not include anything apart from the fields such as descriptions or methods.
+    7. Do not write otherFields, instead write every field explicitly.
 
     Project Structure: 
     {project_structure}

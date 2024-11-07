@@ -17,6 +17,9 @@ class AskLLM(Action):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
-    async def run(self, question: str) -> str:
-        rsp = await self._aask(question)
+    async def run(self, question: str, system="") -> str:
+        if system:
+            rsp = await self._aask(question, [system])
+        else:
+            rsp = await self._aask(question)
         return rsp

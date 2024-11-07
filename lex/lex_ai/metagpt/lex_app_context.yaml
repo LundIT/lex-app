@@ -449,6 +449,9 @@ XLSXField:
         self.save(path, content=File(excel_file), save=False)
     
         return excel_file
+  Example Usage: | 
+      XLSXField.create_excel_file_from_dfs(<FileField Object>, path, data_frames, sheet_names)
+    
 
 LexLogLevel:
   Import Path: lex.lex_app.LexLogger.LexLogLevel import LexLogLevel
@@ -460,3 +463,195 @@ LexLogLevel:
       WARNING = 30
       ERROR = 40
       CRITICAL = 50
+
+PrcoessAdminTest:
+  Import Path: from lex.lex_app.tests.ProcessAdminTestCase import ProcessAdminTestCase
+  source code: |
+    class ProcessAdminTestCase(TestCase):
+    # The ProcessAdminTestCase class is a custom test case class designed to facilitate testing in a Django application. It extends from unittest.TestCase and automates the setup and teardown of test data based on a JSON configuration. This class reads a JSON structure defining actions like create, update, and delete on Django models and executes these actions during the test setup phase.
+    # Purpose: Extends `unittest.TestCase` to create a custom test case class that automates test data setup.
+    
+        def replace_tagged_parameters(self, object_parameters):
+           # * Purpose: Processes parameters by replacing special tagged values with actual objects or parsed data.
+           # * Functionality:
+           #   - Iterates over each key-value pair in object_parameters.
+           #   - If the value is a string and starts with:
+           #     "tag:": Replaces it with an object from self.tagged_objects.
+           #     "datetime:": Parses it into a datetime object.
+           #   - Updates the parameter with the parsed value.
+ 
+          for key in object_parameters:
+              value: str = object_parameters[key]
+              if isinstance(value, str):
+                  parsed_value = value
+                  if value.startswith("tag:"):
+                      # Replace 'tag:<tag_name>' with the actual object from tagged_objects
+                      parsed_value = self.tagged_objects[value.replace("tag:", "")]
+                  elif value.startswith("datetime:"):
+                      # Parse 'datetime:<date_string>' into a datetime object
+                      parsed_value = dateutil.parser.parse(value.replace("datetime:", ""))
+                  object_parameters[key] = parsed_value
+          return object_parameters
+
+    
+        # test_path: An attribute that specifies the path to the test data JSON file. If not provided, it defaults to test_data.json in the same directory as the test class.
+        test_path = None
+    
+     
+        def setUp(self) -> None:
+           # Purpose: Sets up the test environment by performing actions defined in the test data.
+           # Functionality:
+           #   Retrieves all models from the Django app specified in settings.repo_name.
+           #   Initializes a timestamp and an empty dictionary for tagged objects.
+           #   Loads test data using get_test_data().
+           #   Iterates over each action in the test data and performs create, update, or delete operations.
+           #     Create:
+           #       Processes parameters and creates a new object.
+           #       Stores the object in self.tagged_objects with the specified tag.
+           #     Update:
+           #       Processes filter parameters to find the object.
+           #       Updates the object's attributes and saves it.
+           #     Delete:
+           #       Deletes objects matching the filter parameters.
+
+            from datetime import datetime
+
+            # Retrieve all models from the specified Django app
+            generic_app_models = {
+                f"{model.__name__}": model for model in
+                set(apps.get_app_config(settings.repo_name).models.values())
+            }
+
+            self.t0 = datetime.now()  # Record the start time
+            self.tagged_objects = {}  # Initialize a dictionary to store created objects
+
+            test_data = self.get_test_data()  # Load test data from JSON
+
+            # Iterate over each action in the test data
+            for object in test_data:
+                klass = generic_app_models[object['class']]  # Get the model class
+                action = object['action']
+                tag = object.get('tag', 'instance')  # Default tag if not provided
+
+                if action == 'create':
+                    # Replace tagged parameters
+                    object['parameters'] = self.replace_tagged_parameters(object['parameters'])
+                    # Create an instance of the model
+                    self.tagged_objects[tag] = klass(**object['parameters'])
+                    # Cache the action (thread-safe)
+                    cache.set(threading.get_ident(), f"{object['class']}_{action}")
+                    # Save the object to the database
+                    self.tagged_objects[tag].save()
+
+                elif action == 'update':
+                    # Replace tagged filter parameters
+                    object['filter_parameters'] = self.replace_tagged_parameters(object['filter_parmeters'])
+                    # Retrieve the object to update
+                    self.tagged_objects[tag] = klass.objects.filter(**object['filter_parameters']).first()
+                    if self.tagged_objects[tag] is not None:
+                        # Update the object's attributes
+                        for key in object['parameters']:
+                            setattr(self.tagged_objects[tag], key, object['parameters'][key])
+
+                        # Cache the action with object primary key
+                        cache.set(
+                            threading.get_ident(),
+                            f"{object['class']}_{action}_{self.tagged_objects[tag].pk}"
+                        )
+                        # Save the updated object
+                        self.tagged_objects[tag].save()
+
+                elif action == 'delete':
+                    # Delete objects matching the filter parameters
+                    klass.objects.filter(**object['filter_parameters']).delete()
+    
+        def tearDown(self) -> None:
+            pass
+    
+        def get_test_data(self):
+            # Purpose: Determines the path to the test data JSON file and loads it.
+            # Functionality:
+            #   If test_path is not set, defaults to test_data.json in the test class directory.
+            #   If test_path is provided, constructs the path relative to PROJECT_ROOT.
+            #   Calls get_test_data_from_path() to load and return the test data.
+
+            if self.test_path is None:
+                # Use default 'test_data.json' in the test class directory
+                file = inspect.getfile(self.__class__)
+                path = Path(file).parent
+                clean_test_path = str(path) + os.sep + "test_data.json"
+            else:
+                # Use the provided 'test_path'
+                clean_test_path = self.test_path.replace('/', os.sep)
+                clean_test_path = os.getenv("PROJECT_ROOT") + os.sep + clean_test_path
+
+            # Load test data from the JSON file
+            test_data = self.get_test_data_from_path(clean_test_path)
+            return test_data
+    
+        def get_test_data_from_path(self, path):
+            # Purpose: Loads test data from the specified path, handling any nested subprocesses.
+            # Functionality:
+            #   Opens and reads the JSON file at the given path.
+            #   Checks for any "subprocess" keys in the data and recursively loads additional test data.
+            #   Flattens the potentially nested lists of test data into a single list.
+            #   Returns the combined test data.
+
+            with open(str(path), 'r') as f:
+                test_data = json.loads(f.read())
+                # Process any 'subprocess' entries recursively
+                for index, object in enumerate(test_data):
+                    if "subprocess" in object:
+                        subprocess_path = object['subprocess'].replace('/', os.sep)
+                        subprocess_path = os.getenv("PROJECT_ROOT") + os.sep + subprocess_path
+                        sublist = self.get_test_data_from_path(subprocess_path)
+                        test_data[index] = sublist
+
+            # Flatten the list in case of nested lists from subprocesses
+            flat_list = []
+            for sublist in test_data:
+                if isinstance(sublist, list):
+                    flat_list.extend(sublist)
+                else:
+                    flat_list.append(sublist)
+            return flat_list
+    
+        def get_classes(self, generic_app_models):
+            # Purpose: Retrieves a set of all model classes involved in the test data.
+            # Functionality:
+            #   Loads the test data.
+            #   Uses a set comprehension to collect unique model classes based on the "class" key in each test data object.
+
+            test_data = self.get_test_data()
+            # Collects all model classes used in the test data
+            return set(generic_app_models[object['class']] for object in test_data)
+    
+        def check_if_all_models_are_empty(self, generic_app_models):
+            # Purpose: Checks whether all involved model classes have no instances in the database.
+            # Functionality:
+            #   Iterates over each model class obtained from get_classes().
+            #   Returns False immediately if any class has objects.
+            #   Returns True only if all classes are empty.
+ 
+            for klass in self.get_classes(generic_app_models):
+                if klass.objects.all().count() > 0:
+                    # If any model has objects, return False
+                    return False
+            # All models are empty
+            return True
+    
+        def get_list_of_non_empty_models(self, generic_app_models):
+            # Purpose: Provides a summary of models that have instances in the database.
+            # Functionality:
+            #   Iterates over each model class from get_classes().
+            #   Counts the number of instances for each class.
+            #   If a class has instances, adds it to the result dictionary with the count.
+            #   Returns the dictionary of non-empty models.
+
+            count_of_objects_in_non_empty_models = {}
+            for klass in self.get_classes(generic_app_models):
+                c = klass.objects.all().count()
+                if c > 0:
+                    # Add the class and count to the dictionary if not empty
+                    count_of_objects_in_non_empty_models[str(klass)] = c
+            return count_of_objects_in_non_empty_models

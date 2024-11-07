@@ -18,6 +18,128 @@ async def generate_project_structure(project_overview, files_with_explanations, 
     role = LLM()
     code_role = LLM()
     json_role = LLM()
+    better_prompt_new = """
+   Given the project overview and the files with explanations:
+
+[START INSTRUCTIONS]
+
+1. Use the project overview and files provided as a requirements specification for drafting an object design.
+2. Identify and represent relationships between entity classes based on the project description and file content, treating each input file as a potential entity model.
+3. **Incorporate Foreign Key relationships** wherever logical dependencies exist between classes. Analyze each entity to identify connections between them, and create Foreign Key fields to represent these relationships, ensuring a normalized database schema.
+4. Treat input files as sources for entity classes, which hold data and should be structured as models. **Extract these models and their relationships based on the project description, file content, and explanations.**
+5. In every upload model, there must be a mandatory file field, and in every report model, there must be an OPTIONAL file field.
+6. Create models to handle data uploads for each corresponding entity class. Ensure that these upload models can process data according to the columns and types found in the input files.
+7. **Analyze the columns in each input file. Create a unique input model for each file that has a unique set of columns. Only if multiple files have an identical set of columns should they be grouped into a shared model.**
+8. Represent the file structure in JSON format to indicate where each entity class will reside in the project directory.
+9. Separate models logically into main models, upload models, and report models to reflect the structure and purpose of each class.
+10. For report models, draw inspiration from the output files and define models or logic that consolidate data from input models to generate reports.
+11. **Translate any non-English terms to English** for all model and field names. Use standardized software engineering conventions for names, ensuring consistency.
+12. Use capital case for Model and Folder names (e.g., `ModelClass`, `Folder1`) and camel case for field names (e.g., `fieldName`).
+13. Choose fields based on file content, and ensure all model names and field names are in English.
+14. Provide descriptions for each class to clarify its purpose.
+15. Return a simple, parsable JSON object.
+16. Normalize the database schema by minimizing redundancy and using Foreign Key relationships wherever logical dependencies exist between classes.
+17. Examine the columns and data in each file context to inform model structures, **ensuring a distinct input model for each unique set of columns, grouping only identical structures in shared models**.
+18. Ensure report models can use data from input models to generate consolidated reports.
+19. **Return only the JSON object that encapsulates these requirements.**
+20. Exclude ```json tags; write the JSON object directly.
+
+[END INSTRUCTIONS]
+
+Context:
+
+Project Overview:
+{project_overview}
+
+Files with Explanations:
+{file_context}
+
+User Feedback:
+{user_feedback} 
+    """
+    better_prompt = """
+# Objective:
+Process the **Project Overview**, **Files with Explanations**, and **User Feedback** to extract and model the entity classes, their relationships, upload models, and report models. Ensure that the JSON output accurately reflects normalized database schemas and adheres to software engineering conventions.
+
+## Requirements:
+1. **Entity Models Extraction**:
+   - Extract entity classes from the project description and file contents.
+   - Represent relationships between entity classes (e.g., one-to-many, many-to-many).
+
+2. **Upload Models**:
+   - Create separate models to handle the upload of each corresponding entity class.
+   - Ensure compatibility with the data provided in the files.
+   - Has a mandatory file field for data upload.
+
+3. **Report Models**:
+   - Define models or logic that can generate reports based on the input models.
+   - Derive inspiration from the provided output/report files.
+   - Has optional file field for the report file.
+
+4. **File Structure Representation**:
+   - Clearly separate **Models**, **UploadModels**, and **Reports**.
+   - Use capital case naming for entity classes following software engineering conventions.
+   - Ensure that the JSON structure is simple and parsable.
+
+5. **Normalization**:
+   - Design the database schema to be normalized.
+   - Create distinct entities for input files with differing column structures.
+
+6. **Detailed Descriptions**:
+   - Provide comprehensive descriptions for each class and field based on the file contents.
+
+## JSON Structure Guidelines:
+- **Main Sections**:
+  - `ProjectOverview`
+  - `FileStructure`
+    - `Models`
+    - `UploadModels`
+    - `Reports`
+
+- **Classes**:
+  - `name`: CapitalCase
+  - `description`: Detailed explanation of the class.
+  - `fields`: List of fields with `name`, `type`, and `unit` (if applicable).
+  - `relationships`: List of relationships with other classes.
+  - `constraints`: Any constraints or dependencies.
+
+- **Constraints**:
+  - Do not include ```json blocks.
+  - Use simple, parsable JSON without unnecessary complexity.
+  - Avoid including URLs, links, or bibliographies.
+  - Ensure no repetition of copyrighted content.
+
+## Formatting:
+- **Headers and Structure**:
+  - Use double new lines to separate sections.
+  
+- **Lists**:
+  - Use unordered lists for fields.
+
+- **Code and Math**:
+  - Use markdown code blocks with appropriate language tags if necessary.
+
+- **Style**:
+  - Use bold sparingly for emphasis.
+  - Maintain clear visual hierarchy with appropriate markdown styling.
+
+## Final Output:
+Return only a JSON object encapsulating the requirements above. Ensure it is properly formatted and parsable.
+
+**Do not include any additional text, explanations, or markdown formatting outside the JSON object.**
+
+# CONTEXT:
+Project Overview:
+{project_overview}
+
+Files with Explanations:
+{file_context}
+
+User Feedback: 
+{user_feedback}
+
+# OUTPUT:
+    """
 
     prompt = """
         Given the project overview and the files with explanations:
@@ -37,7 +159,11 @@ async def generate_project_structure(project_overview, files_with_explanations, 
         12. add detailed describtion for each class
         13. **The json should parsable, make it simple**
         14. Database schema should be normalized, so craete entiteis in a way that they are normalized
-        14. **No ```json**
+        15. check the column information for every input file and model from the **file context** column section
+        16. For every input file which has different list of columns from other input files, a seperate input model should be created
+        17. The report models should be created in a way that they can be used to generate the report from the input models
+        18. **No ```json**
+        
         [END INSTRUCTIONS]
 
         Input:
@@ -61,7 +187,7 @@ async def generate_project_structure(project_overview, files_with_explanations, 
         json = 
 
         """
-    prompt = """
+    melih_prompt = """
         Given the project overview and the files with explanations:
 
         [START INSTRUCTIONS]
@@ -78,7 +204,11 @@ async def generate_project_structure(project_overview, files_with_explanations, 
         13. add detailed describtion for each class
         14. **The json should parsable, make it simple**
         15. Database schema should be normalized, so craete entiteis in a way that they are normalized
-        15. **No ```json**
+        16. check the column information for every input file and model from the **file context** column section
+        17. For every input file which has different list of columns from other input files, a seperate input model should be created
+        18. The report models should be created in a way that they can be used to generate the report from the input models
+        19. **No ```json**
+        
         [END INSTRUCTIONS]
 
         Context:
@@ -173,7 +303,7 @@ async def generate_project_structure(project_overview, files_with_explanations, 
 
     rsp = await enrich_json_with_files_content(files_with_explanations)
 
-    rsp_json = await role.run(prompt.format(project_overview=json.dumps(project_overview),
+    rsp_json = await role.run(better_prompt_new.format(project_overview=json.dumps(project_overview),
                                             file_context=rsp,
                                             user_feedback="This is the first time for this query, there is no user feedback." if not user_feedback
                                             else user_feedback))
@@ -211,13 +341,13 @@ async def enrich_json_with_files_content(files_with_explanations):
     Given the files with explanations, analyze the content of the files and understand the components of the project and their relationships. 
     [START INSTRUCTIONS]
     1. Open the file and get the content
-    1. Transform the every Timestamp to the form or format of YYYY-MM-DD HH:MM:SS or None
-    2. Timestamp should be parsable from a json prespective
-    3. Name should be without file extensions
-    5. output of the json should be similar to the `style` defined above but without whitespaces
-    6. The json should have no whitespaces
-    7. Output no whitespace or any null bytes, only the json with no ''' json
-    8. The json output is kind of large, somtimes the output would be cut off, so do something about that
+    2. Transform the every Timestamp to the form or format of YYYY-MM-DD HH:MM:SS or None
+    3. Timestamp should be parsable from a json prespective
+    4. Name should be without file extensions
+    6. output of the json should be similar to the `style` defined above but without whitespaces
+    7. The json should have no whitespaces
+    8. Output no whitespace or any null bytes, only the json with no ''' json
+    9. The json output is kind of large, somtimes the output would be cut off, so do something about that
     [STOP INSTRUCTIONS]
     
     [START OUTPUTING JSON] 
@@ -231,14 +361,18 @@ async def enrich_json_with_files_content(files_with_explanations):
                 "name": "",
                 "type": "",
                 "explanation": "",
+                "path": "",
                 "columns": [
                 ],
-                "data_sample": [
+                "data_samples": [
                     {
                     },
                     {
                     },
-                ]
+                    {
+                    },
+                ],
+                row_count: 0
             }
         ]
     }

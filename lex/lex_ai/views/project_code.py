@@ -10,6 +10,9 @@ from lex.lex_ai.models.Project import Project
 from adrf.views import APIView
 import asyncio
 
+from lex_ai.metagpt.generate_test_jsons import generate_test_jsons
+
+
 class ProjectCode(APIView):
     permission_classes = [IsAuthenticated | HasAPIKey]
 
@@ -29,8 +32,8 @@ class ProjectCode(APIView):
             end_delimiter="```",
             max_buffer=20
         )
-        asyncio.create_task(generate_project_code(project, user_feedback))
-        response = StreamingHttpResponse(stream_processor.process_stream(True), content_type="text/plain")
+        asyncio.create_task(generate_test_jsons(project))
+        response = StreamingHttpResponse(stream_processor.process_stream(), content_type="text/plain")
         return response
 
     async def patch(self, request, *args, **kwargs):

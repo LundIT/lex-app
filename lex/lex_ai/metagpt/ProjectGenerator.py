@@ -2,10 +2,11 @@ import os
 from pathlib import Path
 import re
 from typing import Dict, Optional
+from asgiref.sync import sync_to_async, async_to_sync
 
 
 class ProjectGenerator:
-    def __init__(self, project_name: str, base_dir: Optional[str] = None):
+    def __init__(self, project_name: str, project, base_dir: Optional[str] = None, json_type=False):
         """
         Initialize project structure generator
 
@@ -15,12 +16,14 @@ class ProjectGenerator:
         """
         self.project_name =project_name
         self.base_dir = base_dir or os.getcwd()
+        self.project = project
         self.project_path = os.path.join(self.base_dir, project_name)
+        self.json_type = json_type
 
         # Create initial project structure
-        self._create_base_structure()
+        # await self._create_base_structure()
 
-    def _create_base_structure(self):
+    async def _create_base_structure(self):
         """Creates the initial project structure with necessary directories"""
         base_dirs = [
             'Tests',
@@ -33,6 +36,20 @@ class ProjectGenerator:
             os.makedirs(dir_path, exist_ok=True)
             init_path = os.path.join(dir_path, '__init__.py')
             Path(init_path).touch()
+           
+        Path(os.path.join(self.project_path, 'Tests', "input_files")).mkdir(exist_ok=True)
+        Path(os.path.join(self.project_path, 'Tests', "output_files")).mkdir(exist_ok=True)
+        Path(os.path.join(self.project_path, 'Tests', "test_data")).mkdir(exist_ok=True)
+        output_files = await sync_to_async(list)(self.project.output_files.all())
+        input_files = await sync_to_async(list)(self.project.input_files.all())
+
+        for input_file in input_files:
+            with open(os.path.join(self.project_path, 'Tests', input_file.file.name), 'wb') as f:
+                f.write(input_file.file.read())
+
+        for ouput_file in output_files:
+            with open(os.path.join(self.project_path, 'Tests', ouput_file.file.name), 'wb') as f:
+                f.write(ouput_file.file.read())
 
         # Create base config files
         self._create_config_files()
@@ -95,7 +112,9 @@ build/
             file_path: Path to the file relative to src directory
             content: Content of the file
         """
-        content = list(self.parse_codes_with_filenames(content).items())[0][1]
+        if not self.json_type:
+            content = list(self.parse_codes_with_filenames(content).items())[0][1]
+
         # Normalize path separators
         normalized_path = file_path.replace('\\', '/').strip('/')
 

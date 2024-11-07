@@ -25,25 +25,25 @@ class OneModelEntry(ModelEntryProviderMixin, DestroyOneWithPayloadMixin, Retriev
 
         with OperationContext(request) as context_id:
 
-            user_change_log = UserChangeLog(calculationId=calculationId, calculation_record=f"{model_container.id}", message=f"Update of a {model_container.id} started", timestamp=datetime.now(), user_name=get_user_name(request))
-            user_change_log.save()
+            # user_change_log = UserChangeLog(calculationId=calculationId, calculation_record=f"{model_container.id}", message=f"Update of a {model_container.id} started", timestamp=datetime.now(), user_name=get_user_name(request))
+            # user_change_log.save()
             user_name = get_user_name(request)
             user_email = get_user_email(request)
             try:
                 with transaction.atomic():
                     response = CreateModelMixin.create(self, request, *args, **kwargs)
             except Exception as e:
-                user_change_log = UserChangeLog(calculationId=calculationId,
-                                                calculation_record=f"{model_container.id}",
-                                                message=f"{e}",
-                                                timestamp=datetime.now(), user_name=get_user_name(request), traceback=traceback.format_exc())
-                user_change_log.save()
+                # user_change_log = UserChangeLog(calculationId=calculationId,
+                #                                 calculation_record=f"{model_container.id}",
+                #                                 message=f"{e}",
+                #                                 timestamp=datetime.now(), user_name=get_user_name(request), traceback=traceback.format_exc())
+                # user_change_log.save()
                 raise APIException({"error": f"{e} ", "traceback": traceback.format_exc()})
 
-            user_change_log = UserChangeLog(calculationId=calculationId, calculation_record=f"{model_container.id}", message=f'Creation of {model_container.id} with id {response.data["id"]} successful',
-                                            timestamp=datetime.now(), user_name=get_user_name(request))
-            user_change_log.save()
-
+            # user_change_log = UserChangeLog(calculationId=calculationId, calculation_record=f"{model_container.id}", message=f'Creation of {model_container.id} with id {response.data["id"]} successful',
+            #                                 timestamp=datetime.now(), user_name=get_user_name(request))
+            # user_change_log.save()
+            #
             return response
 
     def update(self, request, *args, **kwargs):

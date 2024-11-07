@@ -32,7 +32,8 @@ class ProjectStructure(APIView):
             file_structure.append({
                 'name': input_file.file.name,  # Assuming file.name gives the file name
                 'explanation': input_file.explanation,
-                'type': 'Input'
+                'type': 'Input',
+                'path': input_file.file.path
             })
 
         # Fetch all output files
@@ -41,7 +42,8 @@ class ProjectStructure(APIView):
             file_structure.append({
                 'name': output_file.file.name,  # Assuming file.name gives the file name
                 'explanation': output_file.explanation,
-                'type': 'Output'
+                'type': 'Output',
+                'path': output_file.file.path
             })
 
         response = StreamingHttpResponse(StreamProcessor().process_stream(), content_type="text/plain")

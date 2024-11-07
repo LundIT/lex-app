@@ -6,7 +6,9 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 from rest_framework_api_key.permissions import HasAPIKey
 from lex.lex_app.logging.CalculationLog import CalculationLog
-from lex_app.LexLogger.LexLogger import LexLogLevel, LexLogger
+from lex_app.LexLogger.LexLogger import LexLogger
+from lex_app.LexLogger.LexLogLevel import LexLogLevel
+
 
 class InitCalculationLogs(APIView):
     http_method_names = ['get']

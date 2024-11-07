@@ -20,6 +20,6 @@ class RunTest(APIView):
         project_name = request.data.get('project_name')
         response = await sync_to_async(run_tests)(project_name, test_file=test_file_name)
 
-        return JsonResponse({'message': response})
+        return JsonResponse(response)
 
 

@@ -6,8 +6,100 @@ from lex_ai.metagpt.prompts.LexPrompts import LexPrompts
 from lex_ai.metagpt.roles.LLM import LLM
 
 
-async def generate_test_for_code(generated_code, project, import_pool, class_to_generate, tests):
+async def generate_test_for_code(generated_code, project, import_pool, test_to_generate, test_class_name, dependencies):
     role = LLM()
+    melih_prompt = f"""
+Models that will be tested
+Classes to test: {", ".join(test_to_generate)}
+
+Project Context  
+0. Project Overview and Structure with Business Logic:  
+{project.overview}  
+{project.detailed_structure}  
+{project.business_logic_calcs}  
+
+1. Relevant code for the test:  
+{generated_code}
+
+1.1. Imports for Model Definitions:  
+{import_pool}
+
+2. Data Processing:  
+- Excel file upload handling  
+- Data transformation logic  
+- Report generation  
+
+3. Sample Data Structure and Path for Testing Files:  
+{project.files_with_analysis}  
+
+Test Requirements
+
+Please generate Django tests that cover:
+
+1. Model Testing:  
+   - Field validations (required fields, field types, constraints)  
+   - Foreign key relationships  
+   - Model methods  
+   - Data integrity  
+
+2. Excel Processing:  
+   - File upload validation  
+   - Data parsing accuracy  
+   - Error handling for invalid data  
+   - Column mapping verification  
+   - Analyze real Excel files provided in **Project Context** (point 3) by reading them from their paths for correct row count, column names, and accurate assertion checks  
+    
+3. Business Logic (most important):  
+   - Calculation accuracy  
+   - Data transformation correctness  
+   - Handling of edge cases  
+   - Error scenarios  
+
+4. Integration Testing:  
+   - End-to-end workflow  
+   - Database interactions  
+   - File I/O operations  
+   - Use real data and paths provided in **Project Context** for file I/O tests and assertions based on actual file contents  
+
+Technical Specifications:  
+- Use `django.test.TestCase`  
+- Include `setUp` and `tearDown` methods  
+- Use appropriate test fixtures  
+- Follow Django testing best practices  
+- Use `assertQuerysetEqual` for model comparisons  
+- Use real data and operations, avoiding mocks  
+- Models should be only imported from the import pool
+
+Constraints:  
+1. Only include tests for `{", ".join(test_to_generate)}` and its dependencies, if any. If there are no dependencies, avoid testing other model classes.  
+2. Use accurate row counts, column names, and other details from the real Excel files provided in the **Project Context** to ensure correct assertions.  
+3. Avoid any assumptions not based on provided information.  
+4. If you want to do an assertion check, be sure that you know what to expect for every value you check (e.g. you don't know the second parameter in this example: self.assertEqual(len(df), 2) where df is coming from a file, and you don't know the exact number of rows).
+5. **NEVER WRITE ON TOP THE FILE PATHS PROVIED THEY ARE READ ONLY** 
+6. If you want to write to a file for any reason, use a temporary file path in the same folder and write there.
+
+Test Structure Example:
+```python
+from lex.lex_app.tests.ProcessAdminTestCase import ProcessAdminTestCase
+
+class {test_class_name.replace('_', '')}(ProcessAdminTestCase):
+    @classmethod
+    def setUp(self):
+        super().setUp() 
+
+
+    def test_[specific_functionality](self):
+        # Test implementation
+        pass
+
+Generate Django the next django for my project following this exact format:
+### Tests/{test_class_name.replace('_', '')}.py
+```python
+
+
+Only generate the test for the specified classes {", ".join(test_to_generate)} and stop.
+[Test code here]
+"""
 
     prompt = f"""
    Lex App Context:
@@ -17,14 +109,14 @@ async def generate_test_for_code(generated_code, project, import_pool, class_to_
 
     Usage example:
         ```
-        def ClassModel(LexModel):
+        ClassModel(LexModel):
             # Implement fields here
             # Foreign key relationship should be used according to the data sample from: **Project Input and Output Files**
             # classId = models.ForeignKey(ClassModel2, on_delete=models.CASCADE)
             # Example of wrong foreign key:  models.ForeignKey('<ProjectName>.<Folder>.ClassModel2', on_delete=models.CASCADE) Write only the class name
             # Example of wrong foreign key:  models.ForeignKey('ClassModel2', on_delete=models.CASCADE) It should be the class itself not a string
             
-        def ClassModelUpload(CalculationModel):
+        ClassModelUpload(CalculationModel):
             # Implement fields here
             # XLSXField here for file upload (Mandatory field in every CalculationModel)
             
@@ -96,10 +188,15 @@ SPECIFICATIONS:
     
     Project Input and Output Files:
         {project.files_with_analysis}
+        
+    When using data from files, use these:
+    input_files:
+        {project.input_files}
+    output_files:
+        {project.output_files}
+        
     Generated code:
         {generated_code} 
-    Written tests so far:
-        {tests} 
      
     
     1. Understand the context of the project and write django test for the generated code.
@@ -108,7 +205,7 @@ SPECIFICATIONS:
     4. Your goal is to write tests according to project input and output file
     5. Understand the project from the context and write path of the tests in ### path format the whole tests inside ```python ,```
     
-    Next test to generate is for class {class_to_generate}:
+    Next test to generate is for class {test_to_generate}:
     """
 
 
@@ -116,16 +213,18 @@ SPECIFICATIONS:
 I need comprehensive Django tests for my project. Here's the detailed context:
 
 ## Model Under Test
-Class to test: {class_to_generate[0]}
+Classes to test: {", ".join(test_to_generate)}
 
 ## Project Context
-0. Project Overview and Structure and functionalities:
+0. Project Overview and Structure and Business Logic:
 {project.overview}
 {project.detailed_structure}
-{project.functionalities}
+{project.business_logic_calcs}
 
 1. Model Definition:
 {generated_code}
+
+
 1.1 Imports to use for model definitions: 
 {import_pool}
 
@@ -134,7 +233,7 @@ Class to test: {class_to_generate[0]}
 - Data transformation logic
 - Report generation
 
-3. Sample Data Structure:
+3. Sample Data Structure and Path for files for testing:
 {project.files_with_analysis}
 
 ## Test Requirements
@@ -152,8 +251,9 @@ Please generate Django test that cover:
 - Data parsing accuracy
 - Error handling for invalid data
 - Column mapping verification
+- Directly use the content of real files provided for testing in point (3.) of **Project Context** by reading the file from their path
 
-3. Business Logic:
+3. Business Logic (most important):
 - Calculation accuracy
 - Data transformation correctness
 - Edge cases handling
@@ -163,6 +263,7 @@ Please generate Django test that cover:
 - End-to-end workflow
 - Database interactions
 - File I/O operations
+- Directly use the content of real files provided for testing in point (3.) of **Project Context** by reading the file from their path
 
 Technical Specifications:
 - Use django.test.TestCase
@@ -170,18 +271,20 @@ Technical Specifications:
 - Use appropriate test fixtures
 - Follow Django's testing best practices
 - Use assertQuerysetEqual for model comparisons
-- Implement mock objects for external dependencies
+- Do not mock anything and use real data and actions for testing
 
-Test Structure:
+General remarks and Constraints:
+- Do not include any test implementation for any other class other than the ones in **dependencies**: {", ".join(dependencies)}
+
+Test Structure Example:
 ```python
 from django.test import TestCase
-from django.core.files.uploadedfile import SimpleUploadedFile
-from unittest.mock import patch, MagicMock
 from decimal import Decimal
 import pandas as pd
+import numpy as np
 import io
 
-class [ModelName]Tests(TestCase):
+class {test_class_name.replace('_', '')}(TestCase):
     @classmethod
     def setUpTestData(cls):
         # Setup test data
@@ -196,14 +299,14 @@ class [ModelName]Tests(TestCase):
         pass
 
 Generate Django the next django for my project following this exact format:
-### Tests/[ModelName]Test.py
+### Tests/{test_class_name.replace('_', '')}.py
 ```python
 
 
-Only generate the test for the specified this class {class_to_generate[0]} and stop.
+Only generate the test for the specified classes {", ".join(test_to_generate)} and stop.
 [Test code here]
     """
 
-    rsp = (await role.run(test_prompt)).content
+    rsp = (await role.run(melih_prompt)).content
     return rsp
 

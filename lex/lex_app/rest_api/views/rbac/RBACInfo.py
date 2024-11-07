@@ -47,7 +47,7 @@ class RBACInfo(APIView):
             "view-only": [{"action": ["show", "read", "list"], "resource": "*"}],
         }
 
-        user_roles = ["view-only"]
+        user_roles = ["admin"]
         user_permissions = []
         project_models = [model for model in
                               set(apps.get_app_config(settings.repo_name).models.values())]
