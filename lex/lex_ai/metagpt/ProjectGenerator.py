@@ -14,7 +14,7 @@ class ProjectGenerator:
             project_name: Name of the project
             base_dir: Optional base directory (defaults to current working directory)
         """
-        self.project_name =project_name
+        self.project_name = project_name
         self.base_dir = base_dir or os.getcwd()
         self.project = project
         self.project_path = os.path.join(self.base_dir, project_name)
@@ -104,7 +104,7 @@ build/
 
         return parsed_files
 
-    def add_file(self, file_path: str, content: str):
+    def add_file(self, file_path: str, content: str, skip=False):
         """
         Add a new file to the project structure
 

@@ -72,7 +72,11 @@ PROMPT_REQUIREMENT: |
     4. DO NOT forget to import everything necessary for the code you will write and everytime you change something double check this requirement.
     5. In the places which requires business logic calculations, use the lex-app library CalculationModel class where you extend the calculate method.
     6. In the places which requires uploads or downloads, use the lex-app library CalculationModel class where you extend the calculate method because it also works for post upload operations and to create the files will be downloaded.
-    7. When an excel creation or update is needed, use the lex-app library XLSXField and its create_excel_file_from_dfs function.
+    7. When an excel creation or update is needed, use the lex-app library XLSXField and its create_excel_file_from_dfs function. (Only one line instruction)
+        ```python
+            output_path = 'reports/<Report>.xlsx'
+            XLSXField.create_excel_file_from_dfs(self.file_field, output_path, [df], sheet_names=['<ExampleColumnName>'])
+        ```
     8. In the case of Excel FileField usage for any Django Model classes you will write, use the lex-app library XLSXField class.
     9. Put logs in meaningful places in your code such as calculations and use the lex-app library MarkdownBuilder class from the LexLogger class.
     10. Add primary keys to the Django Model classes you will create in below format:

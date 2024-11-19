@@ -32,8 +32,8 @@ class ProjectCode(APIView):
             end_delimiter="```",
             max_buffer=20
         )
-        asyncio.create_task(generate_test_jsons(project))
-        response = StreamingHttpResponse(stream_processor.process_stream(), content_type="text/plain")
+        asyncio.create_task(generate_project_code(project))
+        response = StreamingHttpResponse(stream_processor.process_stream(trigger_enabled=True), content_type="text/plain")
         return response
 
     async def patch(self, request, *args, **kwargs):

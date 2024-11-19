@@ -25,7 +25,7 @@ def execute_tests(project_name, test_file):
 
     try:
         runner = CustomTestRunner(
-            keepdb=True,
+            keepdb=False,
             interactive=False,
             verbosity=3,
             debug_sql=False,

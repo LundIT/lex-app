@@ -6,6 +6,106 @@ from lex_ai.metagpt.prompts.LexPrompts import LexPrompts
 from lex_ai.metagpt.roles.LLM import LLM
 
 
+async def generate_test_for_json(project, test_to_generate, generated_code, import_pool):
+    role = LLM()
+    
+    prompt =f"""
+Models that will be tested
+Classes to test: {", ".join(test_to_generate)}
+
+Project Context  
+0. Project Overview and Structure with Business Logic:  
+{project.overview}  
+{project.detailed_structure}  
+{project.business_logic_calcs}  
+
+1. Relevant code for the test:  
+{generated_code}
+
+1.1. Imports for Model Definitions:  
+{import_pool}
+
+2. Data Processing:  
+- Excel file upload handling  
+- Data transformation logic  
+- Report generation  
+
+3. Sample Data Structure and Path for Testing Files:  
+{project.files_with_analysis}  
+
+Test Requirements
+
+Please generate ProcessAdminTest tests that cover:
+
+1. Model Testing:  
+   - Field validations (required fields, field types, constraints)  
+   - Foreign key relationships  
+   - Model methods  
+   - Data integrity  
+
+2. Excel Processing:  
+   - File upload validation  
+   - Data parsing accuracy  
+   - Error handling for invalid data  
+   - Column mapping verification  
+   - Analyze real Excel files provided in **Project Context** (point 3) by reading them from their paths for correct row count, column names, and accurate assertion checks  
+    
+3. Business Logic (most important):  
+   - Calculation accuracy  
+   - Data transformation correctness  
+   - Handling of edge cases  
+   - Error scenarios  
+
+4. Integration Testing:  
+   - End-to-end workflow  
+   - Database interactions  
+   - File I/O operations  
+   - Use real data and paths provided in **Project Context** for file I/O tests and assertions based on actual file contents  
+
+Technical Specifications:  
+- Use `django.test.TestCase`  
+- Include `setUp` and `tearDown` methods  
+- Use appropriate test fixtures  
+- Follow Django testing best practices  
+- Use `assertQuerysetEqual` for model comparisons  
+- Use real data and operations, avoiding mocks  
+- Models should be only imported from the import pool
+
+Constraints:  
+1. Only include tests for `{", ".join(test_to_generate)}` and its dependencies, if any. If there are no dependencies, avoid testing other model classes.  
+2. Use accurate row counts, column names, and other details from the real Excel files provided in the **Project Context** to ensure correct assertions.  
+3. Avoid any assumptions not based on provided information.  
+4. If you want to do an assertion check, be sure that you know what to expect for every value you check (e.g. you don't know the second parameter in this example: self.assertEqual(len(df), 2) where df is coming from a file, and you don't know the exact number of rows).
+5. **NEVER WRITE ON TOP THE FILE PATHS PROVIED THEY ARE READ ONLY** 
+6. If you want to write to a file for any reason, use a temporary file path in the same folder and write there.
+
+Test Structure Example:
+```python
+from lex.lex_app.tests.ProcessAdminTestCase import ProcessAdminTestCase
+
+class {"".join(test_to_generate)}(ProcessAdminTestCase):
+    # Mandatory
+    test_path = 'path/to/test/file.json'
+
+    def test():
+        pass 
+    
+    def test_[specific_functionality](self):
+        # Test implementation
+        pass
+
+Generate the next ProcessAdminTest for my project following this exact format:
+### Tests/test_{"".join(test_to_generate)}.py
+```python
+
+
+Only generate the test for the specified classes {", ".join(test_to_generate)} and stop.
+[Test code here]
+"""
+    
+    rsp = (await role.run(prompt)).content
+    
+    return rsp
 async def generate_test_for_code(generated_code, project, import_pool, test_to_generate, test_class_name, dependencies):
     role = LLM()
     melih_prompt = f"""

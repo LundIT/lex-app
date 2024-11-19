@@ -232,6 +232,7 @@ def generate_project_code_prompt_old(project, lex_app_context, code, class_to_ge
                 # Example of wrong foreign key:  models.ForeignKey('<ProjectName>.<Folder>.ClassModel2', on_delete=models.CASCADE) Write only the class name
                 # Example of wrong foreign key:  models.ForeignKey('ClassModel2', on_delete=models.CASCADE) It should be the class itself not a string
                 
+            ```
             ClassModelUpload(CalculationModel):
                 # Implement fields here
                 # XLSXField here for file upload (Mandatory field in every CalculationModel)
@@ -245,6 +246,9 @@ def generate_project_code_prompt_old(project, lex_app_context, code, class_to_ge
                         logger.add_paragraph(f"Error processing ClassModel data: str(e)")
                         raise e
                         
+            ```
+            
+            ```
             OutputReport(CalculationModel):
                 # Implement fields here
                 # XLSXField here for file report (Please don't forget this field in every CalculationModel)
@@ -252,8 +256,17 @@ def generate_project_code_prompt_old(project, lex_app_context, code, class_to_ge
                 def calculate(self):
                     # logger = LexLogger().builder(level=LexLogLevel.INFO, flushing=True) 
                     # Implement the logic here (Should always be implemented, never forget the logic anywhere)
-             
+                    
+                    from <ProjectName>.<Folder>.ClassModel import ClassModel # Since there is a foreign key relationship (or it's used somewhere)
+                    class_model_objects = ClassModel.objects.all() # Example of using the foreign key relationship (ClassModel should therefor be imported)
+                    
+                    from <ProjectName>.<Folder2>.ClassModel2 import ClassModel2 # Since there is a foreign key relationship (or it's used somewhere)
+                    class2_model_objects = ClassModel2.objects.all() # Example of using the foreign key relationship (ClassModel2 should therefor be imported)
+                    
+            ``` 
     
+
+         
     SPECIFICATIONS:
         Project Overview:
             {project.overview}
