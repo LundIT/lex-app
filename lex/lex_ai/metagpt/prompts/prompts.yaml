@@ -88,7 +88,6 @@ PROMPT_REQUIREMENT: |
     13. Don't forget to implement the necessary buisness logic in the calculate method of the CalculationModel class.
     14. LexLogger shall only be used for CalculationModel classes and CalculationModel class's calculate
     15. Double check the imports from the lex_app context or if you use any foreign key relationship
-    
 
      
 

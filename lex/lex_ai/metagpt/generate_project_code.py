@@ -232,6 +232,12 @@ def generate_project_code_prompt_old(project, lex_app_context, code, class_to_ge
                 # Example of wrong foreign key:  models.ForeignKey('<ProjectName>.<Folder>.ClassModel2', on_delete=models.CASCADE) Write only the class name
                 # Example of wrong foreign key:  models.ForeignKey('ClassModel2', on_delete=models.CASCADE) It should be the class itself not a string
                 
+                # DO NOT USE THE FOLLOWING FUNCTIONS FROM ModelClass.objects (because if they are used with a Non-Unique key-value they return more than one object and it will cause an error):
+                #    - Do not use: ModelClass.objects.get_or_create()
+                #    - Do not use: ModelClass.objects.update_or_create()
+                #    - Do not use: ModelClass.objects.get()
+                #    for example instead you can use ModelClass.objects.filter(<key>=<Value>).first() and to check wheter the object is created or not you can use if not ModelClass.objects.filter(<key>=<Value>).exists():
+                
             ```
             ClassModelUpload(CalculationModel):
                 # Implement fields here
@@ -242,6 +248,11 @@ def generate_project_code_prompt_old(project, lex_app_context, code, class_to_ge
                     logger.add_heading("ClassModel Data Upload", level=2)
                     try:
                         # Implement the logic here (Should always be implemented, never forget the logic anywhere)
+                        # DO NOT USE THE FOLLOWING FUNCTIONS FROM ModelClass.objects (because if they are used with a Non-Unique key-value they return more than one object and it will cause an error):
+                        #    - Do not use: ModelClass.objects.get_or_create()
+                        #    - Do not use: ModelClass.objects.update_or_create()
+                        #    - Do not use: ModelClass.objects.get()
+                        #    for example instead you can use ModelClass.objects.filter(<key>=<Value>).first() and to check wheter the object is created or not you can use if not ModelClass.objects.filter(<key>=<Value>).exists():
                     except Exception as e:
                         logger.add_paragraph(f"Error processing ClassModel data: str(e)")
                         raise e
@@ -256,6 +267,12 @@ def generate_project_code_prompt_old(project, lex_app_context, code, class_to_ge
                 def calculate(self):
                     # logger = LexLogger().builder(level=LexLogLevel.INFO, flushing=True) 
                     # Implement the logic here (Should always be implemented, never forget the logic anywhere)
+                
+                    # DO NOT USE THE FOLLOWING FUNCTIONS FROM ModelClass.objects (because if they are used with a Non-Unique key-value they return more than one object and it will cause an error):
+                    #    - Do not use: ModelClass.objects.get_or_create()
+                    #    - Do not use: ModelClass.objects.update_or_create()
+                    #    - Do not use: ModelClass.objects.get()
+                    #    for example instead you can use ModelClass.objects.filter(<key>=<Value>).first() and to check wheter the object is created or not you can use if not ModelClass.objects.filter(<key>=<Value>).exists():
                     
                     from <ProjectName>.<Folder>.ClassModel import ClassModel # Since there is a foreign key relationship (or it's used somewhere)
                     class_model_objects = ClassModel.objects.all() # Example of using the foreign key relationship (ClassModel should therefor be imported)

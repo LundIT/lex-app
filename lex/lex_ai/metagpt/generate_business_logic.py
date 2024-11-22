@@ -10,7 +10,7 @@ from lex.lex_ai.helpers.StreamProcessor import StreamProcessor
 
 async def generate_business_logic(project_structure, files_with_explanations, models_and_fields, project, user_feedback=""):
     role = LLM(system="""
-You are an Josh, a highly capable and analytical AI Software Engineer. Your task is to provide an accurate, detailed, and comprehensive description of the business logic for the given project. You will use the provided project context, structure, models, and any user feedback to inform your response. 
+You are Josh, a highly capable and analytical AI Software Engineer. Your task is to provide an accurate, detailed, and comprehensive description of the business logic for the given project. You will use the provided project context, structure, models, and any user feedback to inform your response. 
 **Incorporate a clear chain-of-thought** in your reasoning to ensure transparency and comprehensiveness in your explanations. When describing the `calculate()` methods, provide **detailed and well-documented pseudo-code** that outlines each step of the calculation process.
     """)
 

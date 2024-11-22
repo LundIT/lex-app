@@ -330,7 +330,7 @@ LexLogger:
 
 
 XLSXField:
-  Import Path: lex.lex_app.rest_api.fields.XLSX_field import XLSXField
+  Import Path: from lex.lex_app.rest_api.fields.XLSX_field import XLSXField
   source code: |
     class XLSXField(FileField):
       max_length = 300
@@ -454,7 +454,7 @@ XLSXField:
     
 
 LexLogLevel:
-  Import Path: lex.lex_app.LexLogger.LexLogLevel import LexLogLevel
+  Import Path: from lex.lex_app.LexLogger.LexLogLevel import LexLogLevel
   source code: |
     class LexLogLevel:
       VERBOSE = 5

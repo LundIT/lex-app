@@ -17,7 +17,7 @@ from lex.lex_ai.metagpt.generate_test_jsons import generate_test_jsons_prompt
 class GenerateJson(Action):
     name: str = "GenerateJson"
 
-    async def run(self, project, json_to_generate):
-        prompt = generate_test_jsons_prompt(project, json_to_generate)
+    async def run(self, project, json_to_generate, generated_jsons):
+        prompt = generate_test_jsons_prompt(project, json_to_generate, generated_jsons=generated_jsons)
         code = await self._aask(prompt)
         return code

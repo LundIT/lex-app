@@ -40,16 +40,24 @@ class ProjectGenerator:
         Path(os.path.join(self.project_path, 'Tests', "input_files")).mkdir(exist_ok=True)
         Path(os.path.join(self.project_path, 'Tests', "output_files")).mkdir(exist_ok=True)
         Path(os.path.join(self.project_path, 'Tests', "test_data")).mkdir(exist_ok=True)
+
+        Path(os.path.join(self.project_path, "input_files")).mkdir(exist_ok=True)
+        Path(os.path.join(self.project_path, "output_files")).mkdir(exist_ok=True)
+
         output_files = await sync_to_async(list)(self.project.output_files.all())
         input_files = await sync_to_async(list)(self.project.input_files.all())
 
         for input_file in input_files:
             with open(os.path.join(self.project_path, 'Tests', input_file.file.name), 'wb') as f:
                 f.write(input_file.file.read())
+            with open(os.path.join(self.project_path, input_file.file.name), 'wb') as f:
+                f.write(input_file.file.read())
 
-        for ouput_file in output_files:
-            with open(os.path.join(self.project_path, 'Tests', ouput_file.file.name), 'wb') as f:
-                f.write(ouput_file.file.read())
+        for output_file in output_files:
+            with open(os.path.join(self.project_path, 'Tests', output_file.file.name), 'wb') as f:
+                f.write(output_file.file.read())
+            with open(os.path.join(self.project_path, output_file.file.name), 'wb') as f:
+                f.write(output_file.file.read())
 
         # Create base config files
         self._create_config_files()

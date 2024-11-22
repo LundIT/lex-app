@@ -29,6 +29,29 @@ class LexRole(Role):
     def get_dependencies(self, generated_code_dict):
         return {k: v for k, (_, _, v) in generated_code_dict.items()}
 
+    def get_dependencies_redirected(self, generated_code_dict):
+        dependencies = {k: v for k, (_, _, v) in generated_code_dict.items()}
+        new_dependencies = {}
+
+        for class_name, deps in dependencies.items():
+            updated_deps = []
+            for dep in deps:
+                # Check if Upload version of dependency exists
+                upload_dep = f"{dep}Upload"
+                if upload_dep in generated_code_dict:
+                    updated_deps.append(upload_dep)
+                else:
+                    updated_deps.append(dep)
+
+            # Store the updated dependencies
+            new_dependencies[class_name] = updated_deps
+
+            # If this class has an Upload version, copy the dependencies to it
+            upload_class = f"{class_name}Upload"
+            if upload_class in generated_code_dict:
+                new_dependencies[upload_class] = updated_deps
+        new_dependencies = {k: v for k, v in new_dependencies.items() if f"{k}Upload" not in generated_code_dict}
+        return new_dependencies
     def get_models_to_test(self, dependencies):
         G = nx.DiGraph(dependencies)
 
@@ -42,8 +65,16 @@ class LexRole(Role):
         all_dependent_classes = {d for cls in class_set for d in dependencies[cls]}
 
 
-        return "\n\n".join([f"### {generated_code_dict[cls][0]}\n{generated_code_dict[cls][1]}" for cls in all_dependent_classes])
+        return "\n".join([f"{generated_code_dict[cls][1]}" for cls in all_dependent_classes])
 
+    def extract_relevant_json(self, class_set, generated_json_dict, dependencies):
+        if isinstance(class_set, str):
+            class_set = {class_set}
+
+        all_dependent_classes = {d for cls in class_set for d in dependencies[cls]}
+
+
+        return "\n".join([generated_json_dict[cls] for cls in all_dependent_classes if cls in generated_json_dict])
     def get_code_from_set(self, class_set, generated_code_dict):
         if isinstance(class_set, str):
             class_set = {class_set}
@@ -57,6 +88,12 @@ class LexRole(Role):
             f"Inner ImporPath: from {project_name}.{path.replace(os.sep, '.').rstrip('.py')} import {class_name}"
             for class_name, path in all_classes
         ])
+        import_pool += "\nLex App Import: from lex.lex_app.rest_api.fields.XLSX_field"
+        import_pool += "\nLex App Import: from lex.lex_app.LexLogger.LexLogLevel"
+        import_pool += "\nLex App Import: from lex.lex_app.LexLogger.LexLogger import LexLogger"
+        import_pool += "\nLex App Import: from lex.lex_app.lex_models.LexModel import LexModel"
+        import_pool += "\nLex App Import: from lex.lex_app.lex_models.CalculationModel import CalculationModel"
+
         import_pool += "\nExternal ImportPath: from django.db import models"
         import_pool += "\nExternal ImportPath: import pandas as pd"
         import_pool += "\nExternal ImportPath: import numpy as np"
