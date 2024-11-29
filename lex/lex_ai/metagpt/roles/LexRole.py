@@ -11,6 +11,69 @@ class LexRole(Role):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
+    def extract_test_failures(self, test_results: dict) -> dict:
+        failures = {
+            'test_class': None,
+            'error_type': None,
+            'error_message': None,
+            'status': None,
+            'stats': None,
+            'uploads': []
+        }
+
+        stderr = test_results.get('console_output', {}).get('stderr', [])
+        stdout = test_results.get('console_output', {}).get('stdout', [])
+
+        for line in stderr:
+            if 'ERROR: test' in line and '(' in line:
+                failures['test_class'] = line.split('(')[1].split(')')[0]
+            elif any(error in line for error in ['ValueError:', 'TypeError:', 'AttributeError:']):
+                failures['error_type'] = line.split(':')[0]
+                failures['error_message'] = line.strip()
+            # elif 'Ran' in line and 'test' in line:
+            #     failures['stats'] = line.strip()
+            elif any(status in line for status in ['FAILED', 'OK']):
+                failures['status'] = line.strip()
+
+        # Extract upload statuses
+        failures['uploads'] = [
+            line.strip()
+            for line in stdout
+            if 'uploaded successfully' in line
+        ]
+
+        return failures
+    def get_relevant_dependency_dict(self, class_name: str, dependencies: dict) -> dict:
+        def get_deps_recursive(cls: str, visited: set) -> set:
+            if cls not in dependencies or cls in visited:
+                return set()
+
+            visited.add(cls)
+            deps = {cls}
+
+            for dep in dependencies[cls]:
+                deps.update(get_deps_recursive(dep, visited))
+
+            return deps
+
+        # Get all relevant classes including the starting class
+        relevant_classes = get_deps_recursive(class_name, set())
+
+        # Create new dictionary with only relevant dependencies
+        relevant_deps = {}
+        for cls in relevant_classes:
+            if cls in dependencies:
+                relevant_deps[cls] = [d for d in dependencies[cls] if d in relevant_classes]
+
+        return relevant_deps
+    def get_test_path(self, test_data_path, class_name, project_name=None):
+        if not isinstance(class_name, str):
+            class_name = "".join(class_name)
+
+        if not project_name:
+            return f"{test_data_path}/{class_name}Test.json"
+        else:
+            return f"{project_name}/{test_data_path}/{class_name}Test.json"
     def extract_project_imports(self, code_string, project_name):
         result = []
         tree = ast.parse(code_string)
@@ -137,8 +200,10 @@ class LexRole(Role):
                     with open(file_path, 'r', encoding='utf-8') as f:
                         content = f.read()
                         # Extract Python code using parse_code
-                        extracted_code = content
+                        path = file_path.split("./projects/")[-1].split(directory_path + "/")[-1]
                         # Add to dictionary with file name as key
-                        python_code_files[file.split(".")[0]] = {"content": extracted_code, "path": file_path.split("./projects/")[-1]}
+                        code = f"### {path}\n```python\n" + content + "\n```"
+
+                        python_code_files[file.split(".")[0]] = (path, code, self.extract_project_imports(content, directory_path))
 
         return python_code_files

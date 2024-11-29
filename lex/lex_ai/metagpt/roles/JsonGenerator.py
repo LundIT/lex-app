@@ -41,40 +41,9 @@ class JsonGenerator(LexRole):
         self.project = project
         self.generated_code_dict = generated_code_dict
 
-    def get_relevant_dependency_dict(self, class_name: str, dependencies: dict) -> dict:
-        def get_deps_recursive(cls: str, visited: set) -> set:
-            if cls not in dependencies or cls in visited:
-                return set()
-
-            visited.add(cls)
-            deps = {cls}
-
-            for dep in dependencies[cls]:
-                deps.update(get_deps_recursive(dep, visited))
-
-            return deps
-
-        # Get all relevant classes including the starting class
-        relevant_classes = get_deps_recursive(class_name, set())
-
-        # Create new dictionary with only relevant dependencies
-        relevant_deps = {}
-        for cls in relevant_classes:
-            if cls in dependencies:
-                relevant_deps[cls] = [d for d in dependencies[cls] if d in relevant_classes]
-
-        return relevant_deps
-    def get_test_path(self, test_data_path, class_name, project_name=None):
-        if not isinstance(class_name, str):
-            class_name = "".join(class_name)
-
-        if not project_name:
-            return f"{test_data_path}/{class_name}Test.json"
-        else:
-            return f"{project_name}/{test_data_path}/{class_name}Test.json"
     async def _act(self):
         project_name = "DemoWindparkConsolidation"
-        project_generator = ProjectGenerator(project_name, self.project, json_type=True)
+        test_generate = ProjectGenerator(project_name, self.project, json_type=True)
 
         redirected_dependencies = self.get_dependencies_redirected(self.generated_code_dict)
         dependencies = self.get_dependencies(self.generated_code_dict)
@@ -87,7 +56,7 @@ class JsonGenerator(LexRole):
 
 
         # _authentication_settings.py
-        project_generator.add_file("_authentication_settings.py", f"initial_data_load = '{project_name}/{test_json_data_path}/test.json'", skip=True)
+        test_generate.add_file("_authentication_settings.py", f"initial_data_load = '{project_name}/{test_json_data_path}/test.json'")
 
         generated_json_dict = {}
 
@@ -140,12 +109,12 @@ class JsonGenerator(LexRole):
                 json_path=f"{project_name}/{start_test_path}"
             )
 
-            project_generator.add_file(start_test_path, content)
-            project_generator.add_file(test_json_path, test_json)
-            project_generator.add_file(test_path, test_file)
+            test_generate.add_file(start_test_path, content)
+            test_generate.add_file(test_json_path, test_json)
+            test_generate.add_file(test_path, test_file)
 
         content = '[\n' + ',\n'.join(subprocesses) + "\n]"
-        project_generator.add_file(f"{project_name}/{test_json_data_path}/test.json", content)
+        test_generate.add_file(f"{test_json_data_path}/test.json", content)
 
         return Message(content="Jsons generated successfully", role=self.profile, cause_by=type(self.rc.todo))
 

@@ -99,9 +99,20 @@ class ProcessAdminTestCase(TestCase):
             tag = object['tag'] if 'tag' in object else 'instance'
             if action == 'create':
                 object['parameters'] = self.replace_tagged_parameters(object['parameters'])
+                if object.get('type', None) == "Report":
+                    for k, v in object['parameters'].items():
+                        if v in self.tagged_objects:
+                            object['parameters'][k] = self.tagged_objects[v]
+
                 self.tagged_objects[tag] = klass(**object['parameters'])
                 cache.set(threading.get_ident(), str(object['class']) + "_" + action)
                 self.tagged_objects[tag].save()
+                if object.get('type', None) == "Upload":
+                    new_klass = generic_app_models[object['class'].replace("Upload", "")]
+                    for index, ob in enumerate(new_klass.objects.all()):
+                        self.tagged_objects[f"{object['input_tag']}_{str(index+1)}"] = ob
+
+
             elif action == 'update':
                 object['filter_parameters'] = self.replace_tagged_parameters(object['filter_parameters'])
                 self.tagged_objects[tag] = klass.objects.filter(**object['filter_parameters']).first()

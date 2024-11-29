@@ -1,4 +1,5 @@
 import os
+from asyncio import Queue
 from pathlib import Path
 import re
 from typing import Dict, Optional
@@ -22,6 +23,17 @@ class ProjectGenerator:
 
         # Create initial project structure
         # await self._create_base_structure()
+
+    def empty_migrations(self):
+        """Delete all files in the migrations directory except __init__.py"""
+        migrations_path = os.path.join(self.project_path, 'migrations')
+        for root, dirs, files in os.walk(migrations_path):
+            for file in files:
+                if file == '__init__.py':
+                    continue
+                file_path = os.path.join(root, file)
+                os.remove(file_path)
+                print(f"Deleted file: {file_path}")
 
     async def _create_base_structure(self):
         """Creates the initial project structure with necessary directories"""
@@ -50,12 +62,24 @@ class ProjectGenerator:
         for input_file in input_files:
             with open(os.path.join(self.project_path, 'Tests', input_file.file.name), 'wb') as f:
                 f.write(input_file.file.read())
+
             with open(os.path.join(self.project_path, input_file.file.name), 'wb') as f:
                 f.write(input_file.file.read())
 
         for output_file in output_files:
             with open(os.path.join(self.project_path, 'Tests', output_file.file.name), 'wb') as f:
                 f.write(output_file.file.read())
+            with open(os.path.join(self.project_path, output_file.file.name), 'wb') as f:
+                f.write(output_file.file.read())
+
+        output_files = await sync_to_async(list)(self.project.output_files.all())
+        input_files = await sync_to_async(list)(self.project.input_files.all())
+
+        for input_file in input_files:
+            with open(os.path.join(self.project_path, input_file.file.name), 'wb') as f:
+                f.write(input_file.file.read())
+
+        for output_file in output_files:
             with open(os.path.join(self.project_path, output_file.file.name), 'wb') as f:
                 f.write(output_file.file.read())
 
@@ -112,7 +136,14 @@ build/
 
         return parsed_files
 
-    def add_file(self, file_path: str, content: str, skip=False):
+    async def add_file_and_stream(self, file_path: str, content: str, queue: Queue):
+        _, content = self.add_file(file_path, content)
+        await queue.put(f"code_file_path:{file_path}\n")
+        for content in content.split("\n"):
+            await queue.put(content + "\n")
+
+
+    def add_file(self, file_path: str, content: str):
         """
         Add a new file to the project structure
 
@@ -139,7 +170,10 @@ build/
         with open(full_path, 'w', encoding='utf-8') as f:
             f.write(content)
 
+
+
         print(f"Created file: {full_path}")
+        return full_path, content
 
     def _create_init_files(self, directory: str):
         """
