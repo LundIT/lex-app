@@ -4,6 +4,8 @@ import os
 import ast
 import sys
 import time
+from typing import Optional
+
 import networkx as nx
 
 import django
@@ -24,14 +26,20 @@ from metagpt.roles.role import Role
 from lex.lex_ai.helpers.StreamProcessor import StreamProcessor
 from lex.lex_ai.metagpt.generate_test_for_code import generate_test_for_code
 from lex.lex_ai.metagpt.run_tests import run_tests, get_failed_test_classes
-from lex_ai.metagpt.actions.GenerateJson import GenerateJsonRole
-from lex_ai.metagpt.generate_project_code import get_context_for_code_reflector, get_prompt_for_code_reflector
-from lex_ai.metagpt.generate_test_jsons import generate_test_python_jsons_alg
-from lex_ai.metagpt.roles.JsonGenerator import JsonGenerator
-from lex_ai.metagpt.roles.LLM import LLM
-from lex_ai.metagpt.roles.LexRole import LexRole
-from lex_app.helpers.RequestHandler import RequestHandler
+from lex.lex_ai.metagpt.actions.GenerateJson import GenerateJsonRole
+from lex.lex_ai.metagpt.generate_project_code import get_context_for_code_reflector, get_prompt_for_code_reflector
+from lex.lex_ai.metagpt.generate_test_jsons import generate_test_python_jsons_alg
+from lex.lex_ai.metagpt.roles.JsonGenerator import JsonGenerator
+from lex.lex_ai.metagpt.roles.LLM import LLM
+from lex.lex_ai.metagpt.roles.LexRole import LexRole
+from lex.lex_ai.metagpt.roles.TestExecutor import TestExecutor
+from lex.lex_app.helpers.RequestHandler import RequestHandler
 from pprint import pprint
+
+class ProjectInfo:
+    def __init__(self, project, project_name):
+        self.project = project
+        self.project_name = project_name
 
 
 
@@ -39,12 +47,73 @@ class CodeGenerator(LexRole):
     name: str = "CodeGenerator"
     profile: str = "Expert in generating code based on architecture and specifications"
 
-    def __init__(self, project, user_feedback, **kwargs):
+    def __init__(self, project_info, user_feedback, **kwargs):
         super().__init__(**kwargs)
         self.set_actions([GenerateCode])
-        self.project = project
+        self.project = project_info.project
+        self.project_info = project_info
         self.user_feedback = user_feedback
+        self.test_executor = TestExecutor(ServerManager(project_info.project_name))
+        self.project_generator = ProjectGenerator(project_info.project_name, project_info.project)
+        self.test_generator = ProjectGenerator(project_info.project_name, project_info.project, json_type=True)
 
+    async def _handle_test_failure(self, set_to_test, generated_code_dict, test_json, dependencies, response_json, test_import_pool,
+                                   reflections=[]):
+        correct_code_so_far = {}
+        for class_to_test in set_to_test:
+            stderr_info = {
+                'test_code': test_json,
+                'class_code': self.get_code_from_set(set_to_test, generated_code_dict),
+                'error_message': response_json.get('error'),
+                'corrected_code': "\n".join(correct_code_so_far)
+            }
+
+            code_reflector = CodeReflector(
+                stderr_info,
+                self.extract_relevant_code(set_to_test, generated_code_dict, dependencies),
+                original_prompt=get_prompt_for_code_reflector(),
+                context=get_context_for_code_reflector(self.project),
+                project=self.project
+            )
+
+            reflection = await code_reflector.reflect()
+            reflections.append(
+                f"------------------Reflection {len(reflections) + 1}---------------------\n\n{reflection}\n\n")
+
+            if self.is_upload(class_to_test):
+                real_model_name = self.get_model_name(class_to_test)
+                regeneration_func = self._regenerate_code_func(real_model_name, generated_code_dict, dependencies, test_import_pool, stderr_info)
+                new_code = await code_reflector.regenerate("".join(reflections), regeneration_func)
+                correct_code_so_far[real_model_name] = new_code
+
+                # Update the generated code dictionary
+                self.project_generator.add_file(generated_code_dict[real_model_name][0], new_code)
+                generated_code_dict[real_model_name] = (
+                    generated_code_dict[real_model_name][0], new_code, generated_code_dict[real_model_name][2])
+
+            regeneration_func = self._regenerate_code_func(class_to_test, generated_code_dict, dependencies, test_import_pool, stderr_info)
+            new_code = await code_reflector.regenerate("".join(reflections), regeneration_func)
+
+            correct_code_so_far[class_to_test] = new_code
+
+            # Update the generated code dictionary
+            self.project_generator.add_file(generated_code_dict[class_to_test][0], new_code)
+            generated_code_dict[class_to_test] = (
+                generated_code_dict[class_to_test][0], new_code, generated_code_dict[class_to_test][2])
+
+    def _regenerate_code_func(self, class_to_test, generated_code_dict, dependencies, test_import_pool, stderr_info=None):
+        regeneration_func = lambda reflection_context: self.rc.todo.run(
+            self.project,
+            self.get_lex_app_context("Lex project"),
+            self.extract_relevant_code(class_to_test, generated_code_dict, dependencies),
+            {'class': class_to_test, 'path': generated_code_dict[class_to_test][0]},
+            self.user_feedback,
+            self.get_import_pool(self.project_info.project_name, [(class_to_test, generated_code_dict[class_to_test][0])]),
+            stderr_info,
+            reflection_context=reflection_context
+        )
+
+        return regeneration_func
 
     def is_upload(self, class_name: str) -> bool:
         return "Upload" in class_name
@@ -55,19 +124,18 @@ class CodeGenerator(LexRole):
         return class_name.replace("Upload", "")
 
     async def _act(self) -> Message:
-        project_name = "DemoWindparkConsolidation"
-        project_generator = ProjectGenerator(project_name, self.project)
+        project_name = self.project_info.project_name
+        project_generator = self.project_generator
+        test_generator = self.test_generator
+
         await project_generator._create_base_structure()
         lex_app_context = self.get_lex_app_context("Lex project")
         all_classes = list(self.project.classes_and_their_paths.items())
-
         import_pool = self.get_import_pool(project_name, all_classes)
 
         # Step 1: Generate all classes first
         generated_code_dict = {}  # Dictionary to store class_name: (path, code)
         cache = True
-
-
 
         if not cache:
             for class_to_generate in all_classes:
@@ -90,40 +158,8 @@ class CodeGenerator(LexRole):
         else:
             generated_code_dict = self.extract_python_code_from_directory(project_name)
 
-        server_manager = ServerManager(project_name)
-        # server_obj = server_manager.restart_server()
-        #
-        # while not server_obj.is_alive():
-        #     time.sleep(0.1)
-        #
-        # time.sleep(2)
-        # try:
-        #     request_handler = RequestHandler(max_retries=3, timeout=10, retry_delay=2)
-        #     response = request_handler.post_with_retry("http://127.0.0.1:8001/ai/run-migrations/", {"project_name": project_name})
-        #     if response is None:
-        #         print("Failed to get response after all retries")
-        #
-        #     response_data = response.json()
-        #     success = response_data.get("success")
-        #     if not success:
-        #         print("Failed to run migrations")
-        #         raise RequestException
-        #
-        # except RequestException as e:
-        #     print(f"Request failed: {str(e)}")
-        #     raise
-
         # Step 2: Generate and test each class, regenerating if tests fail
         max_attempts = 5
-        
-        # dependencies = self.get_dependencies(generated_code_dict)
-        # test_groups = self.get_models_to_test(dependencies)
-
-
-        # print("Dependencies: ", dependencies)
-        # print("Test groups: ", test_groups)
-
-        test_generator = ProjectGenerator(project_name, self.project, json_type=True)
 
         redirected_dependencies = self.get_dependencies_redirected(generated_code_dict)
         dependencies = self.get_dependencies(generated_code_dict)
@@ -169,15 +205,6 @@ class CodeGenerator(LexRole):
             print("Test import pool: ", test_import_pool)
 
             relevant_json = self.extract_relevant_json(set_to_test, generated_json_dict, redirected_dependencies)
-
-            # test = await generate_test_for_code(
-            #     relevant_codes,
-            #     self.project,
-            #     test_import_pool,
-            #     set_to_test,
-            #     class_name,
-            #     set_dependencies
-            # )
 
             print(f"Generating test json for {class_name}...")
 
@@ -227,102 +254,15 @@ class CodeGenerator(LexRole):
             await test_generator.add_file_and_stream(start_test_path, content, queue=StreamProcessor.global_message_queue)
             await test_generator.add_file_and_stream(test_path, test_file, queue=StreamProcessor.global_message_queue)
 
+            # Executing tests
             while not success and attempts < max_attempts:
-                server_obj = server_manager.restart_server()
+                print(f"Running test for {class_name}...")
+                response = await self.test_executor.execute_test(test_file_name, project_name)
 
-                while not server_obj.is_alive() and not server_obj.is_migration_setup_error():
-                    time.sleep(0.1)
-
-                if server_obj.is_migration_setup_error():
-                    response_json = json.loads(server_obj.shared_state['exit'])
-                    success = False
-                else:
-                    time.sleep(3)
-                    data = {
-                        'test_file_name': test_file_name,
-                        'project_name': project_name
-                    }
-
-                    try:
-                        request_handler = RequestHandler(max_retries=3, timeout=10, retry_delay=2)
-                        response = request_handler.post_with_retry("http://127.0.0.1:8001/ai/run-test/", data)
-                        if response is None:
-                            print("Failed to get response after all retries")
-                            success = False
-                            continue
-                        response_json = response.json()
-                        print("\n".join(response_json['console_output']['stderr']))
-
-                        success = response_json.get("success")
-                        response_data = self.extract_test_failures(response_json)
-
-                    except RequestException as e:
-                        print(f"Request failed: {str(e)}")
-                        success = False
-                        attempts += 1
-                        continue
+                success = response['success']
 
                 if not success:
-                    correct_code_so_far = {}
-                    # If test failed, regenerate the class
-                    for class_to_test in set_to_test:
-
-                        stderr_info = {
-                            'test_code': test_json,
-                            'class_code': self.get_code_from_set(set_to_test, generated_code_dict),
-                            'error_message': "\n".join(response_json['console_output']['stderr']),
-                        }
-
-                        stderr_info['corrected_code'] = "\n".join(correct_code_so_far)
-
-                        context = get_context_for_code_reflector(self.project)
-                        original_prompt = get_prompt_for_code_reflector()
-                        code_reflector = CodeReflector(stderr_info, relevant_codes, original_prompt=original_prompt, context=context, project=self.project)
-                        reflection = await code_reflector.reflect()
-
-                        reflections.append(f"------------------Reflection {len(reflections)+1}---------------------\n\n{reflection}\n\n")
-
-                        if self.is_upload(class_to_test):
-                            real_model_name = self.get_model_name(class_to_test)
-                            func = lambda reflection_context: self.rc.todo.run(
-                                self.project,
-                                lex_app_context,
-                                relevant_codes,
-                                {'class': real_model_name, 'path': generated_code_dict[real_model_name][0]},
-                                self.user_feedback,
-                                test_import_pool,
-                                stderr_info,
-                                reflection_context=reflection_context
-                            )
-
-                            new_code = await code_reflector.regenerate("".join(reflections), func)
-                            correct_code_so_far[real_model_name] = new_code
-
-                            # Update the generated code dictionary
-                            project_generator.add_file(generated_code_dict[real_model_name][0], new_code)
-                            generated_code_dict[real_model_name] = (generated_code_dict[real_model_name][0], new_code, generated_code_dict[real_model_name][2])
-
-                        relevant_codes = self.extract_relevant_code(set_to_test, generated_code_dict, dependencies)
-                        # Regenerate the failed class
-                        regeneration_func = lambda reflection_context: self.rc.todo.run(
-                            self.project,
-                            lex_app_context,
-                            relevant_codes,
-                            {'class': class_to_test, 'path': generated_code_dict[class_to_test][0]},
-                            self.user_feedback,
-                            test_import_pool,
-                            stderr_info,
-                            reflection_context=reflection_context
-                        )
-
-
-                        new_code = await code_reflector.regenerate("".join(reflections), regeneration_func)
-                        correct_code_so_far[class_to_test] = new_code
-
-                        # Update the generated code dictionary
-                        project_generator.add_file(generated_code_dict[class_to_test][0], new_code)
-                        generated_code_dict[class_to_test] = (generated_code_dict[class_to_test][0], new_code, generated_code_dict[class_to_test][2])
-
+                    await self._handle_test_failure(set_to_test, generated_code_dict, test_json, dependencies, response, test_import_pool, reflections)
                     attempts += 1
                 else:
                     break
@@ -336,36 +276,12 @@ class CodeGenerator(LexRole):
 
         await test_generator.add_file_and_stream(f"{test_json_data_path}/test.json", content, queue=StreamProcessor.global_message_queue)
         await test_generator.add_file_and_stream("_authentication_settings.py", f"initial_data_load = '{project_name}/{test_json_data_path}/test.json'", queue=StreamProcessor.global_message_queue)
-        await test_generator.add_file_and_stream(f"{test_data_path}/test.py", test_all, queue=StreamProcessor.global_message_queue)
+        await test_generator.add_file_and_stream(test_all_path, test_all, queue=StreamProcessor.global_message_queue)
 
         print("--------------------------------------------\n")
 
-        print("Running all tests...\n")
 
-        server_obj = server_manager.restart_server()
-
-        while not server_obj.is_alive():
-            time.sleep(0.1)
-
-        time.sleep(2)
-
-        data = {
-            'test_file_name': f"test.py",
-            'project_name': project_name
-        }
-        # Step 3: Run all tests
-        try:
-            request_handler = RequestHandler(max_retries=3, timeout=10, retry_delay=2)
-            response = request_handler.post_with_retry("http://127.0.0.1:8001/ai/run-test/", data)
-            if response is None:
-                print("Failed to get response after all retries")
-            response_json = response.json()
-            print("\n".join(response_json['console_output']['stderr']))
-
-            response_data = self.extract_test_failures(response_json)
-
-        except RequestException as e:
-            print(f"Request failed: {str(e)}")
+        response = await self.test_executor.execute_test("test.py", project_name)
 
         # Return results
         message = Message(

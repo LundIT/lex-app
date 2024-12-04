@@ -2,7 +2,7 @@ import yaml
 
 from lex.lex_ai.metagpt.prompts.LexPrompts import LexPrompts
 from asgiref.sync import sync_to_async
-from lex_ai.metagpt.LexContext import LexContext
+from lex.lex_ai.metagpt.LexContext import LexContext
 from lex.lex_ai.helpers.StreamProcessor import StreamProcessor
 
 
@@ -482,7 +482,8 @@ def generate_project_code_prompt_old(project, lex_app_context, code, class_to_ge
 
 async def generate_project_code(project, user_feedback=""):
     from lex_ai.metagpt.roles.CodeGenerator import CodeGenerator
-    role = CodeGenerator(project, user_feedback)
+    from lex.lex_ai.metagpt.roles.CodeGenerator import ProjectInfo
+    role = CodeGenerator(ProjectInfo(project, "DemoWindparkConsolidation"),  user_feedback)
 
     rsp = await role.run("START")
 

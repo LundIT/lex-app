@@ -19,9 +19,9 @@ class ProjectCode(APIView):
     async def get(self, request, *args, **kwargs):
         project = await sync_to_async(Project.objects.first)()
         generated_code = project.generated_code
-        if not generated_code:
-            return JsonResponse({'directory_tree': []})
-        directory_tree = project.classes_and_their_paths
+        # if not generated_code:
+        #     return JsonResponse({'directory_tree': []})
+        directory_tree = project.classes_and_their_paths or []
         return JsonResponse({'directory_tree': directory_tree})
 
     async def post(self, request, *args, **kwargs):

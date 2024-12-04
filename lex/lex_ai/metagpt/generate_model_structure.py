@@ -61,6 +61,7 @@ async def generate_model_structure(project_structure, project, user_feedback="")
     5. Use double quotes for keys and values
     6. Do not include anything apart from the fields such as descriptions or methods.
     7. Do not write otherFields, instead write every field explicitly.
+    8. Only one level folder hierchies are allowed
 
     Project Structure: 
     {project_structure}

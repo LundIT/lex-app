@@ -1,4 +1,4 @@
-from lex.lex_ai.metagpt.generate_project_code import regenerate_project_code_prompt
+from lex_ai.metagpt.generate_project_code import regenerate_project_code_prompt
 from lex.lex_ai.metagpt.roles.LLM import LLM
 
 

@@ -44,8 +44,9 @@ async def generate_project_structure(project_overview, files_with_explanations, 
 19. **Return only the JSON object that encapsulates these requirements.**
 20. Exclude ```json tags; write the JSON object directly.
 21. Example folder names: ("Inputs", "Reports", "Uploads,.. etc this is just an example it could be different) CapitalCase, no spaces, no underscores.
-22. Report class should be able to generate the same output as the output files provided in the file context (Don't add fields that are not needed in the Reports).
-23. Relationships should not be represented as classes but rather as fields
+22. Only one level folder hierchies are allowed
+23. Report class should be able to generate the same output as the output files provided in the file context (Don't add fields that are not needed in the Reports).
+24. Relationships should not be represented as classes but rather as fields
 
 [END INSTRUCTIONS]
 

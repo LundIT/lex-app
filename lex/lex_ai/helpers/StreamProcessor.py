@@ -10,7 +10,6 @@ class StreamProcessor:
             end_delimiter: Optional[str] = None,
             max_buffer: int = 1024,
             # queue: Optional[asyncio.Queue] = global_message_queue
-
     ):
         self.delimiter = delimiter
         self.end_delimiter = end_delimiter

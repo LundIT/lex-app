@@ -23,7 +23,7 @@ class CalculationModel(LexModel):
         (ABORTED, 'ABORTED')
     ]
 
-    is_calculated =  models.CharField(max_length=50, choices=STATUSES, default=NOT_CALCULATED)
+    is_calculated = models.CharField(max_length=50, choices=STATUSES, default=NOT_CALCULATED)
 
     class Meta:
         abstract = True
