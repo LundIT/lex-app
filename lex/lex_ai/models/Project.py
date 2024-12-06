@@ -1,5 +1,8 @@
 from django.db import models
 
+from lex_ai.models.Checkpoint import Checkpoint
+
+
 class Project(models.Model):
     id = models.AutoField(primary_key=True)
     overview = models.TextField(blank=True, null=True)
@@ -16,6 +19,7 @@ class Project(models.Model):
     specification_doc = models.TextField(blank=True, null=True)
     generated_code = models.TextField(blank=True, null=True)
 
+    # checkpoints = models.ForeignKey(Checkpoint, on_delete=models.CASCADE)
     class Meta:
         app_label = 'lex_ai'
 

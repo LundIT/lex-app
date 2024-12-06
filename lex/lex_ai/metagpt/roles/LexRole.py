@@ -137,7 +137,7 @@ class LexRole(Role):
         all_dependent_classes = {d for cls in class_set for d in dependencies[cls]}
 
 
-        return "\n".join([generated_json_dict[cls] for cls in all_dependent_classes if cls in generated_json_dict])
+        return "\n".join([generated_json_dict[cls][1][0] for cls in all_dependent_classes if cls in generated_json_dict])
     def get_code_from_set(self, class_set, generated_code_dict):
         if isinstance(class_set, str):
             class_set = {class_set}

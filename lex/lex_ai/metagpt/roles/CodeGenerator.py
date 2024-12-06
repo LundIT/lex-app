@@ -2,9 +2,12 @@ import asyncio
 import json
 import os
 import ast
+import shutil
 import sys
 import time
-from typing import Optional
+from datetime import datetime
+from pathlib import Path
+from typing import Optional, Dict, List, Any, Set
 
 import networkx as nx
 
@@ -36,6 +39,9 @@ from lex.lex_ai.metagpt.roles.TestExecutor import TestExecutor
 from lex.lex_app.helpers.RequestHandler import RequestHandler
 from pprint import pprint
 
+from lex_ai.metagpt.roles.CheckpointManager import CheckpointState, CodeGeneratorCheckpoint
+
+
 class ProjectInfo:
     def __init__(self, project, project_name):
         self.project = project
@@ -56,6 +62,45 @@ class CodeGenerator(LexRole):
         self.test_executor = TestExecutor(ServerManager(project_info.project_name))
         self.project_generator = ProjectGenerator(project_info.project_name, project_info.project)
         self.test_generator = ProjectGenerator(project_info.project_name, project_info.project, json_type=True)
+        self.checkpoint_manager = CodeGeneratorCheckpoint(project_info.project_name)
+
+    async def save_current_state(self, generated_code_dict: Dict[str, Any], 
+                               generated_json_dict: Dict[str, str],
+                               completed_tests: Set[str],
+                               remaining_test_groups: List[Set[str]],
+                               test_reflections: Dict[str, List[str]],
+                               timestamp: datetime=None) -> datetime:
+        if not timestamp:
+            """Save current generation state to checkpoint"""
+            state = CheckpointState(
+                generated_code_dict=generated_code_dict,
+                generated_json_dict=generated_json_dict,
+                completed_tests=completed_tests,
+                remaining_test_groups=remaining_test_groups,
+                test_reflections=test_reflections,
+                project_name=self.project_info.project_name
+            )
+        else:
+            state = CheckpointState(
+                generated_code_dict=generated_code_dict,
+                generated_json_dict=generated_json_dict,
+                completed_tests=completed_tests,
+                remaining_test_groups=remaining_test_groups,
+                test_reflections=test_reflections,
+                project_name=self.project_info.project_name,
+                timestamp=timestamp
+            )
+
+        return self.checkpoint_manager.save_checkpoint(state)
+
+    async def restore_checkpoint(self, checkpoint_path: Optional[Path] = None) -> CheckpointState:
+        """Restore state from checkpoint"""
+        return self.checkpoint_manager.load_checkpoint(checkpoint_path)
+
+    async def restore_latest_checkpoint(self) -> CheckpointState:
+        latest_checkpoint = self.checkpoint_manager._get_latest_checkpoint()
+        return self.checkpoint_manager.load_checkpoint(latest_checkpoint)
+
 
     async def _handle_test_failure(self, set_to_test, generated_code_dict, test_json, dependencies, response_json, test_import_pool,
                                    reflections=[]):
@@ -108,7 +153,7 @@ class CodeGenerator(LexRole):
             self.extract_relevant_code(class_to_test, generated_code_dict, dependencies),
             {'class': class_to_test, 'path': generated_code_dict[class_to_test][0]},
             self.user_feedback,
-            self.get_import_pool(self.project_info.project_name, [(class_to_test, generated_code_dict[class_to_test][0])]),
+            test_import_pool,
             stderr_info,
             reflection_context=reflection_context
         )
@@ -125,6 +170,11 @@ class CodeGenerator(LexRole):
 
     async def _act(self) -> Message:
         project_name = self.project_info.project_name
+        try:
+            shutil.rmtree(project_name)
+        except OSError as e:
+            pass
+
         project_generator = self.project_generator
         test_generator = self.test_generator
 
@@ -133,20 +183,79 @@ class CodeGenerator(LexRole):
         all_classes = list(self.project.classes_and_their_paths.items())
         import_pool = self.get_import_pool(project_name, all_classes)
 
-        # Step 1: Generate all classes first
+        timestamp = None
         generated_code_dict = {}  # Dictionary to store class_name: (path, code)
-        cache = True
 
-        if not cache:
+    # ------------------------------------------------------------------------------
+        try:
+            checkpoint_state = await self.restore_latest_checkpoint()
+            generated_code_dict = checkpoint_state.generated_code_dict
+            generated_json_dict = checkpoint_state.generated_json_dict
+            completed_tests = checkpoint_state.completed_tests
+            timestamp = checkpoint_state.timestamp
+
+
+            for class_name, (path, code, _) in generated_code_dict.items():
+                project_generator.add_file(path, code)
+
+            for class_name, info in generated_json_dict.items():
+                subprocess_path = info[0]
+                subprocess_json = info[1]
+                json_path = info[2]
+                json_code = info[3]
+                py_path = info[4]
+                py_code = info[5]
+
+                test_generator.add_file(json_path, json_code)
+                test_generator.add_file(subprocess_path, subprocess_json)
+                test_generator.add_file(py_path, py_code)
+
+            # Verify all files exist and regenerate missing ones
+            for class_to_generate in all_classes:
+                class_name, path = class_to_generate
+                full_path = Path(project_name) / path
+                if not full_path.exists():
+                    class_to_generate = next((c for c in all_classes if c[0] == class_name), None)
+                    if class_to_generate:
+                        code = await self.rc.todo.run(
+                            self.project,
+                            lex_app_context,
+                            self._combine_code(generated_code_dict),
+                            class_to_generate,
+                            self.user_feedback,
+                            import_pool,
+                        ) + "\n\n"
+                        project_generator.add_file(path, code)
+                        parsed_code = list(project_generator.parse_codes_with_filenames(code).items())[0][1]
+                        generated_code_dict[class_name] = (
+                        path, code, self.extract_project_imports(parsed_code, project_name))
+
+                        timestamp = await self.save_current_state(
+                            generated_code_dict,
+                            generated_json_dict,
+                            completed_tests,
+                            [],
+                            {},
+                            timestamp
+                        )
+
+
+        except FileNotFoundError:
+            # Start fresh if no checkpoint exists
+            generated_code_dict = {}
+            generated_json_dict = {}
+            completed_tests = set()
+
+            # Generate all classes
             for class_to_generate in all_classes:
                 class_name, path = class_to_generate
                 path = path.replace('\\', '/').strip('/')
-                await StreamProcessor.global_message_queue.put(f"code_file_path:{path}\n")
 
+                await StreamProcessor.global_message_queue.put(f"code_file_path:{path}\n")
                 code = await self.rc.todo.run(
                     self.project,
                     lex_app_context,
-                    self._combine_code(generated_code_dict),  # Combine all existing code
+                    self._combine_code(generated_code_dict),
                     class_to_generate,
                     self.user_feedback,
                     import_pool,
@@ -155,28 +264,91 @@ class CodeGenerator(LexRole):
                 project_generator.add_file(path, code)
                 parsed_code = list(project_generator.parse_codes_with_filenames(code).items())[0][1]
                 generated_code_dict[class_name] = (path, code, self.extract_project_imports(parsed_code, project_name))
-        else:
-            generated_code_dict = self.extract_python_code_from_directory(project_name)
+
+                # Save checkpoint after each class generation
+                timestamp = await self.save_current_state(
+                    generated_code_dict,
+                    generated_json_dict,
+                    completed_tests,
+                    [],
+                    {},
+                    timestamp
+                )
+        # ------------------------------------------------------------------------------
+
+        # Step 1: Generate all classes first
+
+        # generated_code_dict = {}  # Dictionary to store class_name: (path, code)
+        # cache = True
+        # 
+        # if not cache:
+        #     for class_to_generate in all_classes:
+        #         class_name, path = class_to_generate
+        #         path = path.replace('\\', '/').strip('/')
+        #         await StreamProcessor.global_message_queue.put(f"code_file_path:{path}\n")
+        # 
+        #         code = await self.rc.todo.run(
+        #             self.project,
+        #             lex_app_context,
+        #             self._combine_code(generated_code_dict),  # Combine all existing code
+        #             class_to_generate,
+        #             self.user_feedback,
+        #             import_pool,
+        #         ) + "\n\n"
+        # 
+        #         project_generator.add_file(path, code)
+        #         parsed_code = list(project_generator.parse_codes_with_filenames(code).items())[0][1]
+        #         generated_code_dict[class_name] = (path, code, self.extract_project_imports(parsed_code, project_name))
+        # else:
+        #     generated_code_dict = self.extract_python_code_from_directory(project_name)
 
         # Step 2: Generate and test each class, regenerating if tests fail
-        max_attempts = 5
 
+
+
+
+
+
+
+
+
+
+
+
+
+        #
+        max_attempts = 5
+        #
+        # redirected_dependencies = self.get_dependencies_redirected(generated_code_dict)
+        # dependencies = self.get_dependencies(generated_code_dict)
+        # test_groups = self.get_models_to_test(redirected_dependencies)
+        #
+        subprocesses = []
+        #
+        test_data_path = "Tests"
+        test_json_data_path = f"{test_data_path}/test_data"
+        #
+        # generated_json_dict = {}
+
+# ------------------------------------------------------------------------------
         redirected_dependencies = self.get_dependencies_redirected(generated_code_dict)
         dependencies = self.get_dependencies(generated_code_dict)
         test_groups = self.get_models_to_test(redirected_dependencies)
+        remaining_tests = [group for group in test_groups
+                           if "_".join(group) not in completed_tests]
 
-        subprocesses = []
-
-        test_data_path = "Tests"
-        test_json_data_path = f"{test_data_path}/test_data"
-
-        generated_json_dict = {}
-
-        for set_to_test in test_groups:
-            reflections = []
+        for set_to_test in remaining_tests:
             set_dependencies = {d for cls in set_to_test for d in redirected_dependencies[cls]}
+            reflections = []
             attempts = 0
             success = False
+# ------------------------------------------------------------------------------
+
+            # for set_to_test in test_groups:
+        #     reflections = []
+        #     set_dependencies = {d for cls in set_to_test for d in redirected_dependencies[cls]}
+        #     attempts = 0
+        #     success = False
 
             combined_class_name = "_".join(set_to_test)
 
@@ -220,7 +392,6 @@ class CodeGenerator(LexRole):
                 number_of_objects_for_report=number_of_objects_for_report
             ).run("START"))).content + "\n\n"
 
-            generated_json_dict[combined_class_name] = test_json
 
             sub_subprocesses = self.get_models_to_test(self.get_relevant_dependency_dict(combined_class_name, redirected_dependencies))
             helper = lambda x: "{\n\t" + f'"subprocess" : "{self.get_test_path(test_json_data_path, x, project_name)}"' + "\n}"
@@ -228,6 +399,7 @@ class CodeGenerator(LexRole):
             subprocesses.append(helper(combined_class_name))
             content = '[\n' + ',\n'.join(sub_subprocesses) + "\n]"
             start_test_path = f"{test_json_data_path}/test_{combined_class_name}.json"
+
 
             path_to_input_file = ""
 
@@ -250,30 +422,72 @@ class CodeGenerator(LexRole):
                     json_path=f"{project_name}/{start_test_path}",
                 )
 
+
+
+            generated_json_dict[combined_class_name] = start_test_path, content, test_json_path, test_json, test_path, test_file
+
             test_generator.add_file(test_json_path, test_json)
             await test_generator.add_file_and_stream(start_test_path, content, queue=StreamProcessor.global_message_queue)
             await test_generator.add_file_and_stream(test_path, test_file, queue=StreamProcessor.global_message_queue)
 
-            # Executing tests
-            while not success and attempts < max_attempts:
-                print(f"Running test for {class_name}...")
-                response = await self.test_executor.execute_test(test_file_name, project_name)
+    # ------------------------------------------------------------------------------
 
+            while not success and attempts < max_attempts:
+                response = await self.test_executor.execute_test(test_file_name, project_name)
                 success = response['success']
 
                 if not success:
-                    await self._handle_test_failure(set_to_test, generated_code_dict, test_json, dependencies, response, test_import_pool, reflections)
+                    await self._handle_test_failure(
+                        set_to_test,
+                        generated_code_dict,
+                        test_json,
+                        dependencies,
+                        response,
+                        test_import_pool,
+                        reflections
+                    )
                     attempts += 1
                 else:
-                    break
+                    completed_tests.add("_".join(set_to_test))
+                    # Save checkpoint after successful test
+                    timestamp = await self.save_current_state(
+                        generated_code_dict,
+                        generated_json_dict,
+                        completed_tests,
+                        remaining_tests,
+                        {class_name: reflections},
+                        timestamp
+                    )
 
+        # Generate final test configuration
+        content = '[\n' + ',\n'.join(subprocesses) + "\n]"
+        await test_generator.add_file_and_stream(
+            f"{test_json_data_path}/test.json",
+            content,
+            queue=StreamProcessor.global_message_queue
+        )
+
+    # ------------------------------------------------------------------------------
+        # Executing tests
+        #     while not success and attempts < max_attempts:
+        #         print(f"Running test for {class_name}...")
+        #         response = await self.test_executor.execute_test(test_file_name, project_name)
+        #
+        #         success = response['success']
+        #
+        #         if not success:
+        #             await self._handle_test_failure(set_to_test, generated_code_dict, test_json, dependencies, response, test_import_pool, reflections)
+        #             attempts += 1
+        #         else:
+        #             break
+        #
         content = '[\n' + ',\n'.join(subprocesses) + "\n]"
         test_all_path = f"{test_data_path}/test.py"
         test_all = generate_test_python_jsons_alg(
             set_to_test={""},
             json_path=f"{project_name}/{test_json_data_path}/test.json"
         )
-
+        #
         await test_generator.add_file_and_stream(f"{test_json_data_path}/test.json", content, queue=StreamProcessor.global_message_queue)
         await test_generator.add_file_and_stream("_authentication_settings.py", f"initial_data_load = '{project_name}/{test_json_data_path}/test.json'", queue=StreamProcessor.global_message_queue)
         await test_generator.add_file_and_stream(test_all_path, test_all, queue=StreamProcessor.global_message_queue)
@@ -283,6 +497,14 @@ class CodeGenerator(LexRole):
 
         response = await self.test_executor.execute_test("test.py", project_name)
 
+        await self.save_current_state(
+            generated_code_dict,
+            generated_json_dict,
+            completed_tests,
+            remaining_tests,
+            [],
+            timestamp
+        )
         # Return results
         message = Message(
             content=self._combine_code(generated_code_dict),

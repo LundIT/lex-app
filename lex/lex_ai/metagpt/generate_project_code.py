@@ -483,7 +483,7 @@ def generate_project_code_prompt_old(project, lex_app_context, code, class_to_ge
 async def generate_project_code(project, user_feedback=""):
     from lex_ai.metagpt.roles.CodeGenerator import CodeGenerator
     from lex.lex_ai.metagpt.roles.CodeGenerator import ProjectInfo
-    role = CodeGenerator(ProjectInfo(project, "DemoWindparkConsolidation"),  user_feedback)
+    role = CodeGenerator(ProjectInfo(project, "DemoWindparkConsolidation"),  "")
 
     rsp = await role.run("START")
 
