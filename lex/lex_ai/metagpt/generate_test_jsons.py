@@ -6,9 +6,10 @@ from lex_ai.metagpt.prompts.LexPrompts import LexPrompts
 from lex_ai.metagpt.roles.LLM import LLM
 
 
-def generate_test_jsons_prompt(project, json_to_generate, generated_jsons, number_of_objects_for_report=None):
+def generate_test_jsons_prompt(project, json_to_generate, generated_jsons, number_of_objects_for_report=None, user_feedback=""):
 
     report_context = f"""""" if number_of_objects_for_report is None else f"""Number of objects for the report dependency (From the database): {number_of_objects_for_report}"""
+    feedback = f"""""" if not user_feedback else f"""User Feedback: {user_feedback}"""
     example_output = """ 
     
     [
@@ -187,7 +188,7 @@ def generate_test_jsons_prompt(project, json_to_generate, generated_jsons, numbe
         11. If a test has file_input field, you can just used that to upload the data, and use the data for the next tests so don't define any data of your own
         12. Please no ```json
         
-        
+    {feedback} 
     **Example Test Json**:
     {example_output}
 

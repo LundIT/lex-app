@@ -26,4 +26,5 @@ urlpatterns = [
     path('run-test/', RunTest.as_view(), name='run-test'),
     path('run-migrations/', RunMigrations.as_view(), name='run-migrations'),
     path('code-generation-chat/', CodeGenerationChat.as_view(), name='code-generation-chat'),
+    path('approval/', CodeGenerationChat.as_view(), name='code-generation-chat'),
 ]

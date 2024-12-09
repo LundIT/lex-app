@@ -40,6 +40,7 @@ from lex.lex_app.helpers.RequestHandler import RequestHandler
 from pprint import pprint
 
 from lex_ai.metagpt.roles.CheckpointManager import CheckpointState, CodeGeneratorCheckpoint
+from lex_ai.views.UserInteraction import ApprovalType, ApprovalRequest, ApprovalRegistry
 
 
 class ProjectInfo:
@@ -63,6 +64,8 @@ class CodeGenerator(LexRole):
         self.project_generator = ProjectGenerator(project_info.project_name, project_info.project)
         self.test_generator = ProjectGenerator(project_info.project_name, project_info.project, json_type=True)
         self.checkpoint_manager = CodeGeneratorCheckpoint(project_info.project_name)
+        self.approval_registry = ApprovalRegistry()
+
 
     async def save_current_state(self, generated_code_dict: Dict[str, Any], 
                                generated_json_dict: Dict[str, str],
@@ -100,6 +103,9 @@ class CodeGenerator(LexRole):
     async def restore_latest_checkpoint(self) -> CheckpointState:
         latest_checkpoint = self.checkpoint_manager._get_latest_checkpoint()
         return self.checkpoint_manager.load_checkpoint(latest_checkpoint)
+
+    # async def run_cell(self, code):
+    #     code()
 
 
     async def _handle_test_failure(self, set_to_test, generated_code_dict, test_json, dependencies, response_json, test_import_pool,
@@ -168,6 +174,47 @@ class CodeGenerator(LexRole):
     def get_model_name(self, class_name: str) -> str:
         return class_name.replace("Upload", "")
 
+    async def request_code_approval(self, code: str, class_name: str) -> ApprovalRequest:
+        """Request approval for generated code"""
+        request_id = await self.approval_registry.create_request(
+            ApprovalType.CODE_GENERATION,
+            {
+                'class_name': class_name,
+                'code': code,
+                'project_name': self.project_info.project_name
+            }
+        )
+
+        approval_request = await self.approval_registry.wait_for_approval(request_id)
+        return approval_request
+
+    async def request_test_approval(self, test_info: Dict[str, Any], test_code: str) -> ApprovalRequest:
+        """Request approval for test implementation"""
+        request_id = await self.approval_registry.create_request(
+            ApprovalType.TEST_GENERATION,
+            {
+                'test_name': test_info['class_name'],
+                'test_code': test_code,
+                'test_json': test_info.get('test_json'),
+                'dependencies': test_info.get('dependencies', [])
+            }
+        )
+
+        approval_request = await self.approval_registry.wait_for_approval(request_id)
+        return approval_request
+
+    async def generate_class(self, lex_app_context, generated_code_dict, class_to_generate, import_pool, user_feedback):
+        code = await self.rc.todo.run(
+            self.project,
+            lex_app_context,
+            self._combine_code(generated_code_dict),
+            class_to_generate=class_to_generate,
+            import_pool=import_pool,
+            user_feedback=user_feedback,
+        ) + "\n\n"
+        return code
+
+
     async def _act(self) -> Message:
         project_name = self.project_info.project_name
         try:
@@ -217,19 +264,26 @@ class CodeGenerator(LexRole):
                 if not full_path.exists():
                     class_to_generate = next((c for c in all_classes if c[0] == class_name), None)
                     if class_to_generate:
-                        code = await self.rc.todo.run(
-                            self.project,
-                            lex_app_context,
-                            self._combine_code(generated_code_dict),
-                            class_to_generate,
-                            self.user_feedback,
-                            import_pool,
-                        ) + "\n\n"
-                        project_generator.add_file(path, code)
-                        parsed_code = list(project_generator.parse_codes_with_filenames(code).items())[0][1]
-                        generated_code_dict[class_name] = (
-                        path, code, self.extract_project_imports(parsed_code, project_name))
+                        approved = False
+                        user_feedback = ""
+                        while not approved or not ApprovalRegistry.APPROVAL_ON:
+                            code = await self.generate_class(
+                                lex_app_context=lex_app_context,
+                                generated_code_dict=generated_code_dict,
+                                class_to_generate=class_to_generate,
+                                import_pool=import_pool,
+                                user_feedback=user_feedback,
+                            )
+                            parsed_code = list(project_generator.parse_codes_with_filenames(code).items())[0][1]
+                            generated_code_dict[class_name] = (
+                            path, code, self.extract_project_imports(parsed_code, project_name))
 
+                            approvalRequest = await self.request_code_approval(code, class_name)
+                            approved = approvalRequest.status
+                            user_feedback = approvalRequest.feedback
+                            code = approvalRequest.content
+
+                        project_generator.add_file(path, code)
                         timestamp = await self.save_current_state(
                             generated_code_dict,
                             generated_json_dict,
@@ -248,23 +302,33 @@ class CodeGenerator(LexRole):
 
             # Generate all classes
             for class_to_generate in all_classes:
-                class_name, path = class_to_generate
-                path = path.replace('\\', '/').strip('/')
+                approved = True
+                user_feedback = ""
+                path = ""
+                parsed_code = ""
+                class_name = ""
+                while not approved or not ApprovalRegistry.APPROVAL_ON:
+                    class_name, path = class_to_generate
+                    path = path.replace('\\', '/').strip('/')
 
-                await StreamProcessor.global_message_queue.put(f"code_file_path:{path}\n")
-                code = await self.rc.todo.run(
-                    self.project,
-                    lex_app_context,
-                    self._combine_code(generated_code_dict),
-                    class_to_generate,
-                    self.user_feedback,
-                    import_pool,
-                ) + "\n\n"
+                    await StreamProcessor.global_message_queue.put(f"code_file_path:{path}\n")
+                    code = await self.generate_class(
+                        lex_app_context=lex_app_context,
+                        generated_code_dict=generated_code_dict,
+                        class_to_generate=class_to_generate,
+                        import_pool=import_pool,
+                        user_feedback=user_feedback
+                    )
 
-                project_generator.add_file(path, code)
-                parsed_code = list(project_generator.parse_codes_with_filenames(code).items())[0][1]
+                    parsed_code = list(project_generator.parse_codes_with_filenames(code).items())[0][1]
+
+                    approvalRequest = await self.request_code_approval(code, class_name)
+                    approved = approvalRequest.status
+                    user_feedback = approvalRequest.feedback
+                    code = approvalRequest.content
+
                 generated_code_dict[class_name] = (path, code, self.extract_project_imports(parsed_code, project_name))
-
+                project_generator.add_file(path, code)
                 # Save checkpoint after each class generation
                 timestamp = await self.save_current_state(
                     generated_code_dict,
@@ -274,6 +338,7 @@ class CodeGenerator(LexRole):
                     {},
                     timestamp
                 )
+
         # ------------------------------------------------------------------------------
 
         # Step 1: Generate all classes first
@@ -305,18 +370,6 @@ class CodeGenerator(LexRole):
         # Step 2: Generate and test each class, regenerating if tests fail
 
 
-
-
-
-
-
-
-
-
-
-
-
-        #
         max_attempts = 5
         #
         # redirected_dependencies = self.get_dependencies_redirected(generated_code_dict)
@@ -339,17 +392,10 @@ class CodeGenerator(LexRole):
 
         for set_to_test in remaining_tests:
             set_dependencies = {d for cls in set_to_test for d in redirected_dependencies[cls]}
+
             reflections = []
             attempts = 0
             success = False
-# ------------------------------------------------------------------------------
-
-            # for set_to_test in test_groups:
-        #     reflections = []
-        #     set_dependencies = {d for cls in set_to_test for d in redirected_dependencies[cls]}
-        #     attempts = 0
-        #     success = False
-
             combined_class_name = "_".join(set_to_test)
 
             class_name = combined_class_name + "Test"
@@ -358,10 +404,16 @@ class CodeGenerator(LexRole):
 
             test_path = f"{test_data_path}/{test_file_name}"
             test_json_path = f"{test_json_data_path}/{test_json_file_name}"
+# ------------------------------------------------------------------------------
 
-            # Generate test for current class
-            relevant_codes = self.extract_relevant_code(set_to_test, generated_code_dict, dependencies)
+            # for set_to_test in test_groups:
+        #     reflections = []
+        #     set_dependencies = {d for cls in set_to_test for d in redirected_dependencies[cls]}
+        #     attempts = 0
+        #     success = False
+
             upload = False
+            relevant_codes = self.extract_relevant_code(set_to_test, generated_code_dict, dependencies)
 
             if len(set_to_test) == 1:
                 class_code = self.get_code_from_set(set_to_test, generated_code_dict)
@@ -369,14 +421,18 @@ class CodeGenerator(LexRole):
                 set_dependencies.add(list(set_to_test)[0])
                 upload = self.is_upload(next(iter(set_to_test)))
 
+
+            # Generate test for current class
+
+
             test_import_pool = self.get_import_pool(
                 project_name,
                 [(cls, generated_code_dict[cls][0]) for cls in set_dependencies]
             )
-
-            print("Test import pool: ", test_import_pool)
-
             relevant_json = self.extract_relevant_json(set_to_test, generated_json_dict, redirected_dependencies)
+
+
+
 
             print(f"Generating test json for {class_name}...")
 
@@ -384,13 +440,52 @@ class CodeGenerator(LexRole):
             if self.is_report(combined_class_name):
                 number_of_objects_for_report = 1
 
-            await StreamProcessor.global_message_queue.put(f"code_file_path:{test_json_path}\n")
-            test_json = (await (GenerateJsonRole(
-                self.project,
-                (", ".join(set_to_test), relevant_codes),
-                relevant_json,
-                number_of_objects_for_report=number_of_objects_for_report
-            ).run("START"))).content + "\n\n"
+
+
+            approved = False
+            user_feedback = ""
+            # Test approval
+            while not approved or not ApprovalRegistry.APPROVAL_ON:
+                await StreamProcessor.global_message_queue.put(f"code_file_path:{test_json_path}\n")
+
+                test_json = (await (GenerateJsonRole(
+                    self.project,
+                    (", ".join(set_to_test), relevant_codes),
+                    relevant_json,
+                    number_of_objects_for_report=number_of_objects_for_report,
+                    user_feedback=user_feedback
+                ).run("START"))).content + "\n\n"
+
+                start_test_path = f"{test_json_data_path}/test_{combined_class_name}.json"
+                path_to_input_file = ""
+
+                for parameter in list(json.loads(test_json)[0]['parameters'].values()):
+                    if isinstance(parameter, str) and parameter.startswith(project_name):
+                        path_to_input_file = parameter
+                        break
+
+                if upload:
+                    test_file = generate_test_python_jsons_alg(
+                        set_to_test=set_to_test,
+                        json_path=f"{project_name}/{start_test_path}",
+                        upload=True,
+                        path_to_file_input=path_to_input_file,
+                    )
+                else:
+                    test_file = generate_test_python_jsons_alg(
+                        set_to_test=set_to_test,
+                        json_path=f"{project_name}/{start_test_path}",
+                    )
+
+                approvalRequest  = await self.request_test_approval({
+                    'class_name': class_name,
+                    'test_json': test_json,
+                    'dependencies': list(set_dependencies)
+                }, test_file)
+
+                approved = approvalRequest
+                user_feedback = approvalRequest.feedback
+                test_json = approvalRequest.content
 
 
             sub_subprocesses = self.get_models_to_test(self.get_relevant_dependency_dict(combined_class_name, redirected_dependencies))
@@ -398,30 +493,6 @@ class CodeGenerator(LexRole):
             sub_subprocesses = [helper(subprocess) for subprocess in sub_subprocesses]
             subprocesses.append(helper(combined_class_name))
             content = '[\n' + ',\n'.join(sub_subprocesses) + "\n]"
-            start_test_path = f"{test_json_data_path}/test_{combined_class_name}.json"
-
-
-            path_to_input_file = ""
-
-            for parameter in list(json.loads(test_json)[0]['parameters'].values()):
-                if isinstance(parameter, str) and parameter.startswith(project_name):
-                    path_to_input_file = parameter
-                    break
-
-
-            if upload:
-                test_file = generate_test_python_jsons_alg(
-                    set_to_test=set_to_test,
-                    json_path=f"{project_name}/{start_test_path}",
-                    upload=True,
-                    path_to_file_input=path_to_input_file,
-                )
-            else:
-                test_file = generate_test_python_jsons_alg(
-                    set_to_test=set_to_test,
-                    json_path=f"{project_name}/{start_test_path}",
-                )
-
 
 
             generated_json_dict[combined_class_name] = start_test_path, content, test_json_path, test_json, test_path, test_file
