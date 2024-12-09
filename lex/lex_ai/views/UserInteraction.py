@@ -84,7 +84,7 @@ class ApprovalView(APIView):
             for req in registry._requests.values()
             if req.status is None
         ]
-        return Response({'pending_requests': pending_requests})
+        return Response({'pending_requests': pending_requests[0]})
 
     async def post(self, request):
         """Handle approval/rejection response"""

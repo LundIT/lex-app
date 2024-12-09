@@ -203,6 +203,20 @@ class CodeGenerator(LexRole):
         approval_request = await self.approval_registry.wait_for_approval(request_id)
         return approval_request
 
+    async def request_test_execution_approval(self, test_name: str, test_file: str) -> ApprovalRequest:
+        """Request approval for test execution"""
+        request_id = await self.approval_registry.create_request(
+            ApprovalType.TEST_EXECUTION,
+            {
+                'test_name': test_name,
+                'test_file': test_file,
+                'project_name': self.project_info.project_name
+            }
+        )
+
+        approval_request = await self.approval_registry.wait_for_approval(request_id)
+        return approval_request
+
     async def generate_class(self, lex_app_context, generated_code_dict, class_to_generate, import_pool, user_feedback):
         code = await self.rc.todo.run(
             self.project,
@@ -339,49 +353,11 @@ class CodeGenerator(LexRole):
                     timestamp
                 )
 
-        # ------------------------------------------------------------------------------
-
-        # Step 1: Generate all classes first
-
-        # generated_code_dict = {}  # Dictionary to store class_name: (path, code)
-        # cache = True
-        # 
-        # if not cache:
-        #     for class_to_generate in all_classes:
-        #         class_name, path = class_to_generate
-        #         path = path.replace('\\', '/').strip('/')
-        #         await StreamProcessor.global_message_queue.put(f"code_file_path:{path}\n")
-        # 
-        #         code = await self.rc.todo.run(
-        #             self.project,
-        #             lex_app_context,
-        #             self._combine_code(generated_code_dict),  # Combine all existing code
-        #             class_to_generate,
-        #             self.user_feedback,
-        #             import_pool,
-        #         ) + "\n\n"
-        # 
-        #         project_generator.add_file(path, code)
-        #         parsed_code = list(project_generator.parse_codes_with_filenames(code).items())[0][1]
-        #         generated_code_dict[class_name] = (path, code, self.extract_project_imports(parsed_code, project_name))
-        # else:
-        #     generated_code_dict = self.extract_python_code_from_directory(project_name)
-
-        # Step 2: Generate and test each class, regenerating if tests fail
-
-
         max_attempts = 5
-        #
-        # redirected_dependencies = self.get_dependencies_redirected(generated_code_dict)
-        # dependencies = self.get_dependencies(generated_code_dict)
-        # test_groups = self.get_models_to_test(redirected_dependencies)
-        #
+
         subprocesses = []
-        #
         test_data_path = "Tests"
         test_json_data_path = f"{test_data_path}/test_data"
-        #
-        # generated_json_dict = {}
 
 # ------------------------------------------------------------------------------
         redirected_dependencies = self.get_dependencies_redirected(generated_code_dict)
@@ -404,13 +380,6 @@ class CodeGenerator(LexRole):
 
             test_path = f"{test_data_path}/{test_file_name}"
             test_json_path = f"{test_json_data_path}/{test_json_file_name}"
-# ------------------------------------------------------------------------------
-
-            # for set_to_test in test_groups:
-        #     reflections = []
-        #     set_dependencies = {d for cls in set_to_test for d in redirected_dependencies[cls]}
-        #     attempts = 0
-        #     success = False
 
             upload = False
             relevant_codes = self.extract_relevant_code(set_to_test, generated_code_dict, dependencies)
@@ -421,17 +390,11 @@ class CodeGenerator(LexRole):
                 set_dependencies.add(list(set_to_test)[0])
                 upload = self.is_upload(next(iter(set_to_test)))
 
-
-            # Generate test for current class
-
-
             test_import_pool = self.get_import_pool(
                 project_name,
                 [(cls, generated_code_dict[cls][0]) for cls in set_dependencies]
             )
             relevant_json = self.extract_relevant_json(set_to_test, generated_json_dict, redirected_dependencies)
-
-
 
 
             print(f"Generating test json for {class_name}...")
@@ -485,7 +448,10 @@ class CodeGenerator(LexRole):
 
                 approved = approvalRequest
                 user_feedback = approvalRequest.feedback
-                test_json = approvalRequest.content
+                content = approvalRequest.content
+
+                test_json = content.test_json
+                test_file = content.test_code
 
 
             sub_subprocesses = self.get_models_to_test(self.get_relevant_dependency_dict(combined_class_name, redirected_dependencies))
@@ -538,20 +504,6 @@ class CodeGenerator(LexRole):
             queue=StreamProcessor.global_message_queue
         )
 
-    # ------------------------------------------------------------------------------
-        # Executing tests
-        #     while not success and attempts < max_attempts:
-        #         print(f"Running test for {class_name}...")
-        #         response = await self.test_executor.execute_test(test_file_name, project_name)
-        #
-        #         success = response['success']
-        #
-        #         if not success:
-        #             await self._handle_test_failure(set_to_test, generated_code_dict, test_json, dependencies, response, test_import_pool, reflections)
-        #             attempts += 1
-        #         else:
-        #             break
-        #
         content = '[\n' + ',\n'.join(subprocesses) + "\n]"
         test_all_path = f"{test_data_path}/test.py"
         test_all = generate_test_python_jsons_alg(
