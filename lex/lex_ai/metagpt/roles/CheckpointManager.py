@@ -17,6 +17,17 @@ class CheckpointState:
     project_name: str
     timestamp: datetime = field(default_factory=datetime.now)
 
+    def generate_json_tree(self):
+        return {f"{k}_json": v[2] for k, v in self.generated_json_dict.items()} | {k: v[4] for k, v in self.generated_json_dict.items()}
+
+    def generate_code_tree(self):
+        return {k: v[0] for k, v in self.generated_code_dict.items()}
+    def generate_tree(self):
+        return {
+            **self.generate_code_tree(),
+            **self.generate_json_tree(),
+        }
+
     def __post_init__(self):
         """Convert all paths to Path objects"""
         self.completed_tests = set(self.completed_tests)
@@ -30,6 +41,10 @@ class CodeGeneratorCheckpoint:
         self.project_name = project_name
         self.checkpoint_dir = Path(checkpoint_dir)
         self.checkpoint_dir.mkdir(exist_ok=True)
+
+    async def restore_latest_checkpoint(self) -> CheckpointState:
+        latest_checkpoint = self._get_latest_checkpoint()
+        return self.load_checkpoint(latest_checkpoint)
 
     def save_checkpoint(self, state: CheckpointState) -> datetime:
         """Save current state to a checkpoint file"""

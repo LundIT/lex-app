@@ -11,6 +11,8 @@ from adrf.views import APIView
 import asyncio
 
 from lex_ai.metagpt.generate_test_jsons import generate_test_jsons
+from lex_ai.metagpt.roles.CheckpointManager import CodeGeneratorCheckpoint
+from lex_ai.metagpt.roles.CodeGenerator import CodeGenerator
 
 
 class ProjectCode(APIView):
@@ -19,9 +21,13 @@ class ProjectCode(APIView):
     async def get(self, request, *args, **kwargs):
         project = await sync_to_async(Project.objects.first)()
         generated_code = project.generated_code
-        if not generated_code:
-            return JsonResponse({'directory_tree': []})
-        directory_tree = project.classes_and_their_paths
+        checkpoint_manager = CodeGeneratorCheckpoint("DemoWindparkConsolidation")
+        try:
+            latest_checkpoint = await checkpoint_manager.restore_latest_checkpoint()
+            directory_tree = latest_checkpoint.generate_tree()
+        except FileNotFoundError as e:
+            directory_tree = []
+
         return JsonResponse({'directory_tree': directory_tree})
 
     async def post(self, request, *args, **kwargs):
