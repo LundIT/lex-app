@@ -541,7 +541,7 @@ class CodeGenerator(LexRole):
                 approvalRequest = await self.request_test_after_execution_approval(test_info, response)
                 approved = approvalRequest.status
 
-                if approved:
+                if not approved:
                     if not success:
                         await self._handle_test_failure(
                             set_to_test,
@@ -565,9 +565,9 @@ class CodeGenerator(LexRole):
                             {class_name: reflections},
                             timestamp
                         )
-                        continue
-
-            skipped_tests.append(combined_class_name)
+                else:
+                    if not success:
+                        skipped_tests.append(combined_class_name)
 
         # Generate final test configuration
         content = '[\n' + ',\n'.join(subprocesses) + "\n]"
