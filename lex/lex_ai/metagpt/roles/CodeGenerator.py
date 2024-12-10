@@ -213,7 +213,7 @@ class CodeGenerator(LexRole):
     async def request_code_regeneration_approval(self, content: Dict[str, Any], class_name: str) -> ApprovalRequest:
         """Request approval for generated code"""
         request_id = await self.approval_registry.create_request(
-            ApprovalType.CODE_GENERATION,
+            ApprovalType.CODE_REGENERATION,
             {
                 'class_name': class_name,
                 'code': content.get("code"),
@@ -329,6 +329,7 @@ class CodeGenerator(LexRole):
                         approved = False
                         user_feedback = ""
                         while not approved or not ApprovalRegistry.APPROVAL_ON:
+                            await StreamProcessor.global_message_queue.put(f"code_file_path:{path}\n")
                             code = await self.generate_class(
                                 lex_app_context=lex_app_context,
                                 generated_code_dict=generated_code_dict,

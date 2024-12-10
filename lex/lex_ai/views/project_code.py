@@ -19,8 +19,6 @@ class ProjectCode(APIView):
     permission_classes = [IsAuthenticated | HasAPIKey]
 
     async def get(self, request, *args, **kwargs):
-        project = await sync_to_async(Project.objects.first)()
-        generated_code = project.generated_code
         checkpoint_manager = CodeGeneratorCheckpoint("DemoWindparkConsolidation")
         try:
             latest_checkpoint = await checkpoint_manager.restore_latest_checkpoint()

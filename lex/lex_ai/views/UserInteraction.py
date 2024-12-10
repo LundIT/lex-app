@@ -13,6 +13,7 @@ from rest_framework_api_key.permissions import HasAPIKey
 
 class ApprovalType(Enum):
     CODE_GENERATION = "code_generation"
+    CODE_REGENERATION = "code_regeneration"
     TEST_GENERATION = "test_generation"
     TEST_EXECUTION = "test_execution"
     TEST_AFTER_EXECUTION = "test_after_execution"
