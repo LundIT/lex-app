@@ -1,4 +1,5 @@
 import asyncio
+import dataclasses
 import json
 import os
 import ast
@@ -13,6 +14,7 @@ import networkx as nx
 
 import django
 from asgiref.sync import sync_to_async
+from dataclasses import dataclass
 from django.core.management import call_command
 from requests import RequestException
 
@@ -50,6 +52,14 @@ class ProjectInfo:
         self.project_name = project_name
 
 
+@dataclass
+class RegenerationInfo:
+    class_name: str
+    previous_code: str
+    code: str
+    input_model_class_name: str = None
+    previous_input_model_code: str = None
+    input_model_code: str = None
 
 class CodeGenerator(LexRole):
     name: str = "CodeGenerator"
@@ -153,15 +163,21 @@ class CodeGenerator(LexRole):
                 correct_code_so_far[class_to_test] = new_code
 
 
-                approvalRequest = await self.request_code_regeneration_approval({
-                    'code': new_code,
-                    'model_code': new_code_model,
-                }, class_to_test)
+                regeneration_info = RegenerationInfo(
+                    class_name=class_to_test,
+                    previous_code=generated_code_dict[class_to_test][1],
+                    code=new_code,
+                    input_model_class_name=real_model_name,
+                    previous_input_model_code=generated_code_dict[real_model_name][1],
+                    input_model_code=new_code_model
+                )
+
+                approvalRequest = await self.request_code_regeneration_approval(regeneration_info)
 
                 approved = approvalRequest.status
                 feedback = approvalRequest.feedback
                 new_code = approvalRequest.content.get("code", new_code) or new_code
-                new_code_model = approvalRequest.content.get("model_code", new_code_model) or new_code_model
+                new_code_model = approvalRequest.content.get("input_model_code", new_code_model) or new_code_model
 
                 # Update the generated code dictionary
                 if approved:
@@ -210,14 +226,12 @@ class CodeGenerator(LexRole):
         approval_request = await self.approval_registry.wait_for_approval(request_id)
         return approval_request
 
-    async def request_code_regeneration_approval(self, content: Dict[str, Any], class_name: str) -> ApprovalRequest:
+    async def request_code_regeneration_approval(self, regeneration_info: RegenerationInfo) -> ApprovalRequest:
         """Request approval for generated code"""
         request_id = await self.approval_registry.create_request(
             ApprovalType.CODE_REGENERATION,
             {
-                'class_name': class_name,
-                'code': content.get("code"),
-                'model_code': content.get("model_code"),
+                **(regeneration_info.__dict__),
                 'project_name': self.project_info.project_name
             }
         )
