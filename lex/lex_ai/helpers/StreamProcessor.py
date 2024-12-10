@@ -35,7 +35,7 @@ class StreamProcessor:
                 message = await self.queue.get()
                 if message == 'DONE':
                     break
-                if message.startswith("code_file_path"):
+                if message.startswith("code_file_path") or message.startswith("approval_required"):
                     yield message
                     continue
 

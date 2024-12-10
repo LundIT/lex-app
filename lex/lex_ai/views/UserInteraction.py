@@ -33,7 +33,7 @@ class ApprovalRegistry:
     _instance = None
     _requests: Dict[str, ApprovalRequest] = {}
     _events: Dict[str, asyncio.Event] = {}
-    APPROVAL_ON = False
+    APPROVAL_ON = True
 
     def __new__(cls):
         if cls._instance is None:

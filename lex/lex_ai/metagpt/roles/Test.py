@@ -20,8 +20,8 @@ class TestInfo:
 
     def __post_init__(self):
         """Validate and process paths after initialization"""
-        self.test_file_path = Path(self.test_file_path)
-        self.test_json_path = Path(self.test_json_path)
+        self.test_file_path = Path(self.test_file_path).as_posix()
+        self.test_json_path = Path(self.test_json_path).as_posix()
 
     @property
     def test_file_name(self) -> str:

@@ -196,6 +196,20 @@ class CodeGenerator(LexRole):
     def get_model_name(self, class_name: str) -> str:
         return class_name.replace("Upload", "")
 
+    async def request_code_approval(self, content: str, class_name: str) -> ApprovalRequest:
+        """Request approval for generated code"""
+        request_id = await self.approval_registry.create_request(
+            ApprovalType.CODE_GENERATION,
+            {
+                'class_name': class_name,
+                'code': content,
+                'project_name': self.project_info.project_name
+            }
+        )
+        await StreamProcessor.global_message_queue.put("approval_required")
+        approval_request = await self.approval_registry.wait_for_approval(request_id)
+        return approval_request
+
     async def request_code_regeneration_approval(self, content: Dict[str, Any], class_name: str) -> ApprovalRequest:
         """Request approval for generated code"""
         request_id = await self.approval_registry.create_request(
@@ -207,7 +221,7 @@ class CodeGenerator(LexRole):
                 'project_name': self.project_info.project_name
             }
         )
-
+        await StreamProcessor.global_message_queue.put("approval_required")
         approval_request = await self.approval_registry.wait_for_approval(request_id)
         return approval_request
 
@@ -222,7 +236,7 @@ class CodeGenerator(LexRole):
                 'dependencies': test_info.get('dependencies', [])
             }
         )
-
+        await StreamProcessor.global_message_queue.put("approval_required")
         approval_request = await self.approval_registry.wait_for_approval(request_id)
         return approval_request
 
@@ -231,13 +245,13 @@ class CodeGenerator(LexRole):
         request_id = await self.approval_registry.create_request(
             ApprovalType.TEST_AFTER_EXECUTION,
             {
-                **test_info.__dict__,
+                **(test_info.__dict__),
                 'success': test_result['success'],
                 'error': test_result.get('error'),
                 'console_output': test_result.get('console_output', {}),
             }
         )
-
+        await StreamProcessor.global_message_queue.put("approval_required")
         approval_request = await self.approval_registry.wait_for_approval(request_id)
         return approval_request
 
@@ -247,7 +261,7 @@ class CodeGenerator(LexRole):
             ApprovalType.TEST_EXECUTION,
             test_info.__dict__
         )
-
+        await StreamProcessor.global_message_queue.put("approval_required")
         approval_request = await self.approval_registry.wait_for_approval(request_id)
         return approval_request
 
@@ -329,7 +343,7 @@ class CodeGenerator(LexRole):
                             approvalRequest = await self.request_code_approval(code, class_name)
                             approved = approvalRequest.status
                             user_feedback = approvalRequest.feedback
-                            code = approvalRequest.content
+                            code = approvalRequest.content["code"]
 
                         project_generator.add_file(path, code)
                         timestamp = await self.save_current_state(
@@ -350,7 +364,7 @@ class CodeGenerator(LexRole):
 
             # Generate all classes
             for class_to_generate in all_classes:
-                approved = True
+                approved = False
                 user_feedback = ""
                 path = ""
                 parsed_code = ""
@@ -373,7 +387,7 @@ class CodeGenerator(LexRole):
                     approvalRequest = await self.request_code_approval(code, class_name)
                     approved = approvalRequest.status
                     user_feedback = approvalRequest.feedback
-                    code = approvalRequest.content
+                    code = approvalRequest.content["code"]
 
                 generated_code_dict[class_name] = (path, code, self.extract_project_imports(parsed_code, project_name))
                 project_generator.add_file(path, code)
@@ -518,45 +532,42 @@ class CodeGenerator(LexRole):
             )
 
 
-            while len(skipped_tests) != 0 and not success and attempts < max_attempts:
-                approvalRequest = await self.request_test_execution_approval(test_info)
+            while len(skipped_tests) == 0 and not success and attempts < max_attempts:
+
+                response = await self.test_executor.execute_test(test_file_name, project_name)
+                success = response['success']
+
+
+                approvalRequest = await self.request_test_after_execution_approval(test_info, response)
                 approved = approvalRequest.status
 
                 if approved:
-                    response = await self.test_executor.execute_test(test_file_name, project_name)
-                    success = response['success']
+                    if not success:
+                        await self._handle_test_failure(
+                            set_to_test,
+                            generated_code_dict,
+                            test_json,
+                            dependencies,
+                            response,
+                            test_import_pool,
+                            reflections
+                        )
+                        attempts += 1
+                    else:
+                        completed_tests.add("_".join(set_to_test))
+                        # Save checkpoint after successful test
 
+                        timestamp = await self.save_current_state(
+                            generated_code_dict,
+                            generated_json_dict,
+                            completed_tests,
+                            remaining_tests,
+                            {class_name: reflections},
+                            timestamp
+                        )
+                        continue
 
-                    approvalRequest = await self.request_test_after_execution_approval(response, test_info)
-                    approved = approvalRequest.status
-
-                    if approved:
-                        if not success:
-                            await self._handle_test_failure(
-                                set_to_test,
-                                generated_code_dict,
-                                test_json,
-                                dependencies,
-                                response,
-                                test_import_pool,
-                                reflections
-                            )
-                            attempts += 1
-                        else:
-                            completed_tests.add("_".join(set_to_test))
-                            # Save checkpoint after successful test
-
-                            timestamp = await self.save_current_state(
-                                generated_code_dict,
-                                generated_json_dict,
-                                completed_tests,
-                                remaining_tests,
-                                {class_name: reflections},
-                                timestamp
-                            )
-                            continue
-
-                skipped_tests.append(combined_class_name)
+            skipped_tests.append(combined_class_name)
 
         # Generate final test configuration
         content = '[\n' + ',\n'.join(subprocesses) + "\n]"
