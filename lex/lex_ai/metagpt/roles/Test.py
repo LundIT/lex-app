@@ -11,10 +11,12 @@ class TestInfo:
     test_name: str
     test_file_path: Path
     test_json_path: Path
-    dependencies: List[str]
+    test_code: Dict[str, str]
+    dependencies: List[str] = None
     parameters: Optional[Dict[str, Any]] = None
     project_name: Optional[str] = None
     set_to_test: Set[str] = None
+    test_output: Optional[str] = None
 
     def __post_init__(self):
         """Validate and process paths after initialization"""
@@ -35,3 +37,4 @@ class TestInfo:
     def full_json_path(self) -> Path:
         """Get the complete JSON path including project name"""
         return Path(self.project_name) / self.test_json_path if self.project_name else self.test_json_path
+

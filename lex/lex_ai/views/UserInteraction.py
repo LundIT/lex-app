@@ -15,6 +15,7 @@ class ApprovalType(Enum):
     CODE_GENERATION = "code_generation"
     TEST_GENERATION = "test_generation"
     TEST_EXECUTION = "test_execution"
+    TEST_AFTER_EXECUTION = "test_after_execution"
 
 
 @dataclass

@@ -40,6 +40,7 @@ from lex.lex_app.helpers.RequestHandler import RequestHandler
 from pprint import pprint
 
 from lex_ai.metagpt.roles.CheckpointManager import CheckpointState, CodeGeneratorCheckpoint
+from lex_ai.metagpt.roles.Test import TestInfo
 from lex_ai.views.UserInteraction import ApprovalType, ApprovalRequest, ApprovalRegistry
 
 
@@ -111,54 +112,75 @@ class CodeGenerator(LexRole):
     async def _handle_test_failure(self, set_to_test, generated_code_dict, test_json, dependencies, response_json, test_import_pool,
                                    reflections=[]):
         correct_code_so_far = {}
+        approved = False
         for class_to_test in set_to_test:
-            stderr_info = {
-                'test_code': test_json,
-                'class_code': self.get_code_from_set(set_to_test, generated_code_dict),
-                'error_message': response_json.get('error'),
-                'corrected_code': "\n".join(correct_code_so_far)
-            }
+            feedback = ""
+            while not approved:
+                real_model_name = ""
+                new_code_model = ""
 
-            code_reflector = CodeReflector(
-                stderr_info,
-                self.extract_relevant_code(set_to_test, generated_code_dict, dependencies),
-                original_prompt=get_prompt_for_code_reflector(),
-                context=get_context_for_code_reflector(self.project),
-                project=self.project
-            )
+                stderr_info = {
+                    'test_code': test_json,
+                    'class_code': self.get_code_from_set(set_to_test, generated_code_dict),
+                    'error_message': response_json.get('error'),
+                    'corrected_code': "\n".join(correct_code_so_far)
+                }
 
-            reflection = await code_reflector.reflect()
-            reflections.append(
-                f"------------------Reflection {len(reflections) + 1}---------------------\n\n{reflection}\n\n")
+                code_reflector = CodeReflector(
+                    stderr_info,
+                    self.extract_relevant_code(set_to_test, generated_code_dict, dependencies),
+                    original_prompt=get_prompt_for_code_reflector(),
+                    context=get_context_for_code_reflector(self.project),
+                    project=self.project
+                )
 
-            if self.is_upload(class_to_test):
-                real_model_name = self.get_model_name(class_to_test)
-                regeneration_func = self._regenerate_code_func(real_model_name, generated_code_dict, dependencies, test_import_pool, stderr_info)
+                reflection = await code_reflector.reflect()
+                reflections.append(
+                    f"------------------Reflection {len(reflections) + 1}---------------------\n\n{reflection}\n\n")
+
+                if self.is_upload(class_to_test):
+                    real_model_name = self.get_model_name(class_to_test)
+                    regeneration_func = self._regenerate_code_func(real_model_name, generated_code_dict, dependencies, test_import_pool, stderr_info, feedback=feedback)
+                    new_code_model = await code_reflector.regenerate("".join(reflections), regeneration_func)
+                    correct_code_so_far[real_model_name] = new_code_model
+
+                    # Update the generated code dictionary
+
+
+                regeneration_func = self._regenerate_code_func(class_to_test, generated_code_dict, dependencies, test_import_pool, stderr_info, feedback=feedback)
                 new_code = await code_reflector.regenerate("".join(reflections), regeneration_func)
-                correct_code_so_far[real_model_name] = new_code
+
+                correct_code_so_far[class_to_test] = new_code
+
+
+                approvalRequest = await self.request_code_regeneration_approval({
+                    'code': new_code,
+                    'model_code': new_code_model,
+                }, class_to_test)
+
+                approved = approvalRequest.status
+                feedback = approvalRequest.feedback
+                new_code = approvalRequest.content.get("code", new_code) or new_code
+                new_code_model = approvalRequest.content.get("model_code", new_code_model) or new_code_model
 
                 # Update the generated code dictionary
-                self.project_generator.add_file(generated_code_dict[real_model_name][0], new_code)
-                generated_code_dict[real_model_name] = (
-                    generated_code_dict[real_model_name][0], new_code, generated_code_dict[real_model_name][2])
+                if approved:
+                    if self.is_upload(class_to_test):
+                        self.project_generator.add_file(generated_code_dict[real_model_name][0], new_code_model)
+                        generated_code_dict[real_model_name] = (
+                            generated_code_dict[real_model_name][0], new_code_model, generated_code_dict[real_model_name][2])
 
-            regeneration_func = self._regenerate_code_func(class_to_test, generated_code_dict, dependencies, test_import_pool, stderr_info)
-            new_code = await code_reflector.regenerate("".join(reflections), regeneration_func)
+                    self.project_generator.add_file(generated_code_dict[class_to_test][0], new_code)
+                    generated_code_dict[class_to_test] = (
+                        generated_code_dict[class_to_test][0], new_code, generated_code_dict[class_to_test][2])
 
-            correct_code_so_far[class_to_test] = new_code
-
-            # Update the generated code dictionary
-            self.project_generator.add_file(generated_code_dict[class_to_test][0], new_code)
-            generated_code_dict[class_to_test] = (
-                generated_code_dict[class_to_test][0], new_code, generated_code_dict[class_to_test][2])
-
-    def _regenerate_code_func(self, class_to_test, generated_code_dict, dependencies, test_import_pool, stderr_info=None):
+    def _regenerate_code_func(self, class_to_test, generated_code_dict, dependencies, test_import_pool, stderr_info=None, feedback=None):
         regeneration_func = lambda reflection_context: self.rc.todo.run(
             self.project,
             self.get_lex_app_context("Lex project"),
             self.extract_relevant_code(class_to_test, generated_code_dict, dependencies),
             {'class': class_to_test, 'path': generated_code_dict[class_to_test][0]},
-            self.user_feedback,
+            feedback,
             test_import_pool,
             stderr_info,
             reflection_context=reflection_context
@@ -174,13 +196,14 @@ class CodeGenerator(LexRole):
     def get_model_name(self, class_name: str) -> str:
         return class_name.replace("Upload", "")
 
-    async def request_code_approval(self, code: str, class_name: str) -> ApprovalRequest:
+    async def request_code_regeneration_approval(self, content: Dict[str, Any], class_name: str) -> ApprovalRequest:
         """Request approval for generated code"""
         request_id = await self.approval_registry.create_request(
             ApprovalType.CODE_GENERATION,
             {
                 'class_name': class_name,
-                'code': code,
+                'code': content.get("code"),
+                'model_code': content.get("model_code"),
                 'project_name': self.project_info.project_name
             }
         )
@@ -203,15 +226,26 @@ class CodeGenerator(LexRole):
         approval_request = await self.approval_registry.wait_for_approval(request_id)
         return approval_request
 
-    async def request_test_execution_approval(self, test_name: str, test_file: str) -> ApprovalRequest:
+    async def request_test_after_execution_approval(self, test_info: TestInfo, test_result: Dict[str, Any]) -> ApprovalRequest:
+        """Request approval for test execution results"""
+        request_id = await self.approval_registry.create_request(
+            ApprovalType.TEST_AFTER_EXECUTION,
+            {
+                **test_info.__dict__,
+                'success': test_result['success'],
+                'error': test_result.get('error'),
+                'console_output': test_result.get('console_output', {}),
+            }
+        )
+
+        approval_request = await self.approval_registry.wait_for_approval(request_id)
+        return approval_request
+
+    async def request_test_execution_approval(self, test_info: TestInfo) -> ApprovalRequest:
         """Request approval for test execution"""
         request_id = await self.approval_registry.create_request(
             ApprovalType.TEST_EXECUTION,
-            {
-                'test_name': test_name,
-                'test_file': test_file,
-                'project_name': self.project_info.project_name
-            }
+            test_info.__dict__
         )
 
         approval_request = await self.approval_registry.wait_for_approval(request_id)
@@ -366,6 +400,8 @@ class CodeGenerator(LexRole):
         remaining_tests = [group for group in test_groups
                            if "_".join(group) not in completed_tests]
 
+        skipped_tests = []
+
         for set_to_test in remaining_tests:
             set_dependencies = {d for cls in set_to_test for d in redirected_dependencies[cls]}
 
@@ -450,8 +486,8 @@ class CodeGenerator(LexRole):
                 user_feedback = approvalRequest.feedback
                 content = approvalRequest.content
 
-                test_json = content.test_json
-                test_file = content.test_code
+                test_json = content.get("test_json", None) or test_json
+                test_file = content.get("test_code", None) or test_file
 
 
             sub_subprocesses = self.get_models_to_test(self.get_relevant_dependency_dict(combined_class_name, redirected_dependencies))
@@ -468,33 +504,59 @@ class CodeGenerator(LexRole):
             await test_generator.add_file_and_stream(test_path, test_file, queue=StreamProcessor.global_message_queue)
 
     # ------------------------------------------------------------------------------
+            test_info = TestInfo(
+                test_json_path=test_json_path,
+                test_file_path=test_path,
+                test_name=combined_class_name,
+                test_code={
+                    "json": test_json,
+                    "python": test_file
+                },
+                dependencies=list(set_dependencies),
+                project_name=project_name,
+                set_to_test=set_to_test
+            )
 
-            while not success and attempts < max_attempts:
-                response = await self.test_executor.execute_test(test_file_name, project_name)
-                success = response['success']
 
-                if not success:
-                    await self._handle_test_failure(
-                        set_to_test,
-                        generated_code_dict,
-                        test_json,
-                        dependencies,
-                        response,
-                        test_import_pool,
-                        reflections
-                    )
-                    attempts += 1
-                else:
-                    completed_tests.add("_".join(set_to_test))
-                    # Save checkpoint after successful test
-                    timestamp = await self.save_current_state(
-                        generated_code_dict,
-                        generated_json_dict,
-                        completed_tests,
-                        remaining_tests,
-                        {class_name: reflections},
-                        timestamp
-                    )
+            while len(skipped_tests) != 0 and not success and attempts < max_attempts:
+                approvalRequest = await self.request_test_execution_approval(test_info)
+                approved = approvalRequest.status
+
+                if approved:
+                    response = await self.test_executor.execute_test(test_file_name, project_name)
+                    success = response['success']
+
+
+                    approvalRequest = await self.request_test_after_execution_approval(response, test_info)
+                    approved = approvalRequest.status
+
+                    if approved:
+                        if not success:
+                            await self._handle_test_failure(
+                                set_to_test,
+                                generated_code_dict,
+                                test_json,
+                                dependencies,
+                                response,
+                                test_import_pool,
+                                reflections
+                            )
+                            attempts += 1
+                        else:
+                            completed_tests.add("_".join(set_to_test))
+                            # Save checkpoint after successful test
+
+                            timestamp = await self.save_current_state(
+                                generated_code_dict,
+                                generated_json_dict,
+                                completed_tests,
+                                remaining_tests,
+                                {class_name: reflections},
+                                timestamp
+                            )
+                            continue
+
+                skipped_tests.append(combined_class_name)
 
         # Generate final test configuration
         content = '[\n' + ',\n'.join(subprocesses) + "\n]"
