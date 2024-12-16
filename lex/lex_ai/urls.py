@@ -2,6 +2,7 @@ from django.urls import path
 
 from lex_ai.views.child_server.run_migrations import RunMigrations
 from lex_ai.views.child_server.run_test import RunTest
+from lex_ai.views.github.repo_status import RepoStatus
 from lex_ai.views.project_files import ProjectFilesView
 
 from lex_ai.views.project_overview import ProjectOverview
@@ -14,6 +15,9 @@ from lex_ai.views.project_code import ProjectCode
 from lex_ai.views.project_code_file import ProjectCodeFile
 from lex_ai.views.code_generation_chat import CodeGenerationChat
 from lex_ai.views.UserInteraction import ApprovalView
+from lex_ai.views.github.clone_repo import CloneRepo
+from lex_ai.views.github.commit_push import CommitAndPushView
+
 urlpatterns = [
     path('project-overview/', ProjectOverview.as_view(), name='project-overview'),
     path('project-files/', ProjectFilesView.as_view(), name='project-files'),
@@ -28,4 +32,7 @@ urlpatterns = [
     path('run-migrations/', RunMigrations.as_view(), name='run-migrations'),
     path('code-generation-chat/', CodeGenerationChat.as_view(), name='code-generation-chat'),
     path('approval/', ApprovalView.as_view(), name='approval-view'),
+    path('clone-repo/', CloneRepo.as_view(), name='clone-repo'),
+    path('repo-status/', RepoStatus.as_view(), name='repo-status'),
+    path('commit-push/', CommitAndPushView.as_view(), name='commit-push'),
 ]

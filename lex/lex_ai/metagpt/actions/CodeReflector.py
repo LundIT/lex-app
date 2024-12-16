@@ -1,6 +1,6 @@
 from lex_ai.metagpt.generate_project_code import regenerate_project_code_prompt
 from lex.lex_ai.metagpt.roles.LLM import LLM
-
+from lex.lex_ai.helpers.StreamProcessor import StreamProcessor
 
 
 
@@ -84,6 +84,6 @@ class CodeReflector:
             reflection_result.content,
             self.error_info
         )
-
+        await StreamProcessor.global_message_queue.put("reflection_done")
         # Step 4: Use existing regeneration prompt with added insights
         return regen_context

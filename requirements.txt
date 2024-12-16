@@ -48,3 +48,4 @@ markdown
 mistune
 langchain_openai
 adrf
+gitpython

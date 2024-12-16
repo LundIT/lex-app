@@ -18,7 +18,6 @@ from dataclasses import dataclass
 from django.core.management import call_command
 from requests import RequestException
 
-from lex.lex_ai.helpers.StreamProcessor import StreamProcessor
 from lex_ai.helpers.post_request import post_request
 from lex_ai.metagpt.ProjectGenerator import ProjectGenerator
 from lex_ai.metagpt.actions.CodeReflector import CodeReflector
