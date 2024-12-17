@@ -5,12 +5,13 @@ from lex.lex_ai.helpers.StreamProcessor import StreamProcessor
 
 
 class CodeReflector:
-    def __init__(self, error_info, code_context, original_prompt, context, project):
+    def __init__(self, error_info, code_context, original_prompt, context, project, feedback=""):
         self.error_info = error_info
         self.code_context = code_context
         self.original_prompt = original_prompt
         self.context = context
         self.project = project
+        self.feedback = feedback
 
     def analyze_error(self):
         """
@@ -48,6 +49,8 @@ class CodeReflector:
         Questions to answer:
         1. Are the models field aligned with the columns in the data in the uploaded file (According to [FILES AND THEIR COLUMNS]? (If it's a data upload error)
         2. Are imports correct ?
+        
+        {"More important notes: " + self.feedback if self.feedback else ""} 
 
         Provide a structured analysis of maximum 10 sentences that can guide code regeneration.
         """
@@ -68,7 +71,8 @@ class CodeReflector:
             # }
         }
 
-    async def regenerate(self, regen_context, regeneration_func):
+    @classmethod
+    async def regenerate(cls, regen_context, regeneration_func):
         return await regeneration_func(regen_context)
 
     async def reflect(self):

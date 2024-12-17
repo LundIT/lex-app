@@ -50,6 +50,13 @@ class ProjectInfo:
         self.project = project
         self.project_name = project_name
 
+@dataclass
+class ReflectionAnalysisInfo:
+    reflection_content: str
+    test_class: str
+    error_info: Dict[str, Any]
+    previous_reflections: List[str]
+
 
 @dataclass
 class RegenerationInfo:
@@ -76,6 +83,63 @@ class CodeGenerator(LexRole):
         self.checkpoint_manager = CodeGeneratorCheckpoint(project_info.project_name)
         self.approval_registry = ApprovalRegistry()
 
+    async def handle_reflection_analysis(self, error_info: Dict[str, Any], test_class: str,
+                                         previous_reflections: List[str], generated_code_dict, dependencies) -> str:
+        """Execute reflection analysis with approval workflow"""
+        approved = False
+        feedback = ""
+        reflection_content = ""
+        max_reflections = 5
+
+        while not approved and max_reflections > 0:
+            # Generate reflection analysis
+            code_reflector = CodeReflector(
+                error_info,
+                self.extract_relevant_code(test_class, generated_code_dict, dependencies),
+                original_prompt=get_prompt_for_code_reflector(),
+                context=get_context_for_code_reflector(self.project),
+                project=self.project,
+                feedback=feedback
+            )
+
+            reflection_content = await code_reflector.reflect()
+
+            # Request approval for reflection analysis
+            approval_request = await self.request_reflection_analysis_approval(
+                ReflectionAnalysisInfo(
+                    reflection_content=reflection_content,
+                    test_class=test_class,
+                    error_info=error_info,
+                    previous_reflections=previous_reflections
+                )
+            )
+
+            approved = approval_request.status
+            feedback = approval_request.feedback
+
+            max_reflections -= 1
+
+            if approved:
+                reflection_content = approval_request.content.get("reflection", reflection_content)
+
+        return reflection_content
+
+    async def request_reflection_analysis_approval(self, reflection_info: ReflectionAnalysisInfo) -> ApprovalRequest:
+        """Request approval for reflection analysis"""
+        request_id = await self.approval_registry.create_request(
+            ApprovalType.REFLECTION_ANALYSIS,
+            {
+                'reflection': reflection_info.reflection_content,
+                'test_class': reflection_info.test_class,
+                'error_info': reflection_info.error_info,
+                'previous_reflections': reflection_info.previous_reflections,
+                'project_name': self.project_info.project_name
+            }
+        )
+
+        await StreamProcessor.global_message_queue.put("reflection_approval_required")
+        approval_request = await self.approval_registry.wait_for_approval(request_id)
+        return approval_request
 
     async def save_current_state(self, generated_code_dict: Dict[str, Any], 
                                generated_json_dict: Dict[str, str],
@@ -135,29 +199,29 @@ class CodeGenerator(LexRole):
                     'corrected_code': "\n".join(correct_code_so_far)
                 }
 
-                code_reflector = CodeReflector(
-                    stderr_info,
-                    self.extract_relevant_code(set_to_test, generated_code_dict, dependencies),
-                    original_prompt=get_prompt_for_code_reflector(),
-                    context=get_context_for_code_reflector(self.project),
-                    project=self.project
-                )
+                # code_reflector = CodeReflector(
+                #     stderr_info,
+                #     self.extract_relevant_code(set_to_test, generated_code_dict, dependencies),
+                #     original_prompt=get_prompt_for_code_reflector(),
+                #     context=get_context_for_code_reflector(self.project),
+                #     project=self.project
+                # )
 
-                reflection = await code_reflector.reflect()
+                reflection = await self.handle_reflection_analysis(stderr_info, class_to_test, reflections, generated_code_dict, dependencies)
                 reflections.append(
                     f"------------------Reflection {len(reflections) + 1}---------------------\n\n{reflection}\n\n")
 
                 if self.is_upload(class_to_test):
                     real_model_name = self.get_model_name(class_to_test)
                     regeneration_func = self._regenerate_code_func(real_model_name, generated_code_dict, dependencies, test_import_pool, stderr_info, feedback=feedback)
-                    new_code_model = await code_reflector.regenerate("".join(reflections), regeneration_func)
+                    new_code_model = await CodeReflector.regenerate("".join(reflections), regeneration_func)
                     correct_code_so_far[real_model_name] = new_code_model
 
                     # Update the generated code dictionary
 
 
                 regeneration_func = self._regenerate_code_func(class_to_test, generated_code_dict, dependencies, test_import_pool, stderr_info, feedback=feedback)
-                new_code = await code_reflector.regenerate("".join(reflections), regeneration_func)
+                new_code = await CodeReflector.regenerate("".join(reflections), regeneration_func)
 
                 correct_code_so_far[class_to_test] = new_code
 
@@ -190,16 +254,19 @@ class CodeGenerator(LexRole):
                         generated_code_dict[class_to_test][0], new_code, generated_code_dict[class_to_test][2])
 
     def _regenerate_code_func(self, class_to_test, generated_code_dict, dependencies, test_import_pool, stderr_info=None, feedback=None):
-        regeneration_func = lambda reflection_context: self.rc.todo.run(
-            self.project,
-            self.get_lex_app_context("Lex project"),
-            self.extract_relevant_code(class_to_test, generated_code_dict, dependencies),
-            {'class': class_to_test, 'path': generated_code_dict[class_to_test][0]},
-            feedback,
-            test_import_pool,
-            stderr_info,
-            reflection_context=reflection_context
-        )
+        def regeneration_func(reflection_context):
+            StreamProcessor.global_message_queue.put(StreamProcessor.START_BLOCK_FLAG)
+            self.rc.todo.run(
+                self.project,
+                self.get_lex_app_context("Lex project"),
+                self.extract_relevant_code(class_to_test, generated_code_dict, dependencies),
+                {'class': class_to_test, 'path': generated_code_dict[class_to_test][0]},
+                feedback,
+                test_import_pool,
+                stderr_info,
+                reflection_context=reflection_context
+            )
+            StreamProcessor.global_message_queue.put(StreamProcessor.END_BLOCK_FLAG)
 
         return regeneration_func
 
@@ -279,6 +346,7 @@ class CodeGenerator(LexRole):
         return approval_request
 
     async def generate_class(self, lex_app_context, generated_code_dict, class_to_generate, import_pool, user_feedback):
+        await StreamProcessor.global_message_queue.put(StreamProcessor.START_BLOCK_FLAG)
         code = await self.rc.todo.run(
             self.project,
             lex_app_context,
@@ -287,6 +355,7 @@ class CodeGenerator(LexRole):
             import_pool=import_pool,
             user_feedback=user_feedback,
         ) + "\n\n"
+        await StreamProcessor.global_message_queue.put(StreamProcessor.END_BLOCK_FLAG)
         return code
 
 
@@ -386,7 +455,6 @@ class CodeGenerator(LexRole):
                 while not approved or not ApprovalRegistry.APPROVAL_ON:
                     class_name, path = class_to_generate
                     path = path.replace('\\', '/').strip('/')
-
                     await StreamProcessor.global_message_queue.put(f"code_file_path:{path}\n")
                     code = await self.generate_class(
                         lex_app_context=lex_app_context,
@@ -582,6 +650,16 @@ class CodeGenerator(LexRole):
                 else:
                     if not success:
                         skipped_tests.append(combined_class_name)
+                    else:
+                        timestamp = await self.save_current_state(
+                            generated_code_dict,
+                            generated_json_dict,
+                            completed_tests,
+                            remaining_tests,
+                            {class_name: reflections},
+                            timestamp
+                        )
+
 
         # Generate final test configuration
         content = '[\n' + ',\n'.join(subprocesses) + "\n]"
