@@ -9,9 +9,9 @@ class ApprovalPreference:
     @classmethod
     async def is_enabled(cls) -> bool:
         prefs = await PreferenceManager.get_preference(cls.KEY, {
-            'enabled': True,
+            'enabled': False,
         })
-        return prefs.get('enabled', True)
+        return prefs.get('enabled')
 
     @classmethod
     async def set_enabled(cls, enabled: bool, user=None) -> None:

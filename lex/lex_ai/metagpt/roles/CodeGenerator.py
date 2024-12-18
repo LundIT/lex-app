@@ -282,7 +282,7 @@ class CodeGenerator(LexRole):
         return class_name.replace("Upload", "")
 
     async def request_code_approval(self, content: str, class_name: str) -> ApprovalRequest:
-        if await ApprovalPreference.is_enabled():
+        if not await ApprovalPreference.is_enabled():
             return ApprovalRequest(
                 request_id="",
                 status=True,
@@ -308,7 +308,7 @@ class CodeGenerator(LexRole):
         return approval_request
 
     async def request_code_regeneration_approval(self, regeneration_info: RegenerationInfo) -> ApprovalRequest:
-        if await ApprovalPreference.is_enabled():
+        if not await ApprovalPreference.is_enabled():
             return ApprovalRequest(
                 request_id="",
                 status=True,

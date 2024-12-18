@@ -13,17 +13,24 @@ class PreferenceManager:
     async def get_preference(cls, key: str, default: Any = None) -> Any:
         try:
             pref = await sync_to_async(SystemPreference.objects.get)(key=key)
-            value = pref
+            value = pref.value
         except SystemPreference.DoesNotExist:
             value = default
 
         return value
 
     @classmethod
-    async def set_preference(cls, key: str, value: Any, user=None, description: str = "") -> None:
-        pref, created = await sync_to_async(SystemPreference.objects.update_or_create)(
-            key=key,
-            defaults=value
-        )
-
-
+    async def set_preference(cls, key: str, value: dict, user=None, description: str = "") -> None:
+        try:
+            pref = await sync_to_async(SystemPreference.objects.get)(key=key)
+            pref.value = value
+            pref.description = description
+            pref.modified_by = user
+            await sync_to_async(pref.save)()
+        except SystemPreference.DoesNotExist:
+            await sync_to_async(SystemPreference.objects.create)(
+                key=key,
+                value=value,
+                description=description,
+                modified_by=user
+            )

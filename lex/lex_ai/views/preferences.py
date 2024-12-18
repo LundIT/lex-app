@@ -17,6 +17,6 @@ class Preferences(APIView):
     async def post(self, request, *args, **kwargs):
         key = request.data.get('key', None)
         value = request.data.get('value', None)
-        if not key:
+        if key:
             await PreferenceManager.set_preference(key, value)
         return JsonResponse({'message': 'Preference saved successfully'})
