@@ -49,3 +49,4 @@ mistune
 langchain_openai
 adrf
 gitpython
+httpx==0.27.0
