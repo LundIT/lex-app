@@ -182,7 +182,7 @@ LOGGING = {
 INSTALLED_APPS = [
     'channels',
     'lex.lex_app.apps.LexAppConfig',
-    'lex.lex_ai.apps.LexAiConfig',
+    'lex_ai',
     repo_name,
     "adrf",
     'celery',
