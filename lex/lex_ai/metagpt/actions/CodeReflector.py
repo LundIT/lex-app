@@ -50,7 +50,7 @@ class CodeReflector:
         1. Are the models field aligned with the columns in the data in the uploaded file (According to [FILES AND THEIR COLUMNS]? (If it's a data upload error)
         2. Are imports correct ?
         
-        {"More important notes: " + self.feedback if self.feedback else ""} 
+    {"More important notes: " + self.feedback if self.feedback else ""} 
 
         Provide a structured analysis of maximum 10 sentences that can guide code regeneration.
         """

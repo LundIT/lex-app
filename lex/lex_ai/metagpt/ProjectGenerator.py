@@ -20,9 +20,12 @@ class ProjectGenerator:
         self.project = project
         self.project_path = os.path.join(self.base_dir, project_name)
         self.json_type = json_type
+        self.temp_location = os.path.join(self.base_dir, 'temp_clone', project_name)
 
         # Create initial project structure
         # await self._create_base_structure()
+
+
 
     def empty_migrations(self):
         """Delete all files in the migrations directory except __init__.py"""
@@ -136,11 +139,58 @@ build/
 
         return parsed_files
 
+
+    def add_file_all(self, file_path: str, content: str):
+        self.add_file(file_path, content)
+        self.add_file_git(file_path, content)
+
+    async def add_file_and_stream_all(self, file_path: str, content: str, queue: Queue):
+        await self.add_file_and_stream(file_path, content, queue)
+        await self.add_file_and_stream_git(file_path, content, queue)
+
     async def add_file_and_stream(self, file_path: str, content: str, queue: Queue):
         _, content = self.add_file(file_path, content)
         await queue.put(f"code_file_path:{file_path}\n")
         for content in content.split("\n"):
             await queue.put(content + "\n")
+
+    async def add_file_and_stream_git(self, file_path: str, content: str, queue: Queue):
+        _, content = self.add_file_git(file_path, content)
+        await queue.put(f"code_file_path:{file_path}\n")
+        for content in content.split("\n"):
+            await queue.put(content + "\n")
+
+    def add_file_git(self, file_path: str, content: str):
+        """
+        Add a new file to the project structure
+
+        Args:
+            file_path: Path to the file relative to src directory
+            content: Content of the file
+        """
+        if not self.json_type:
+            content = list(self.parse_codes_with_filenames(content).items())[0][1]
+
+        # Normalize path separators
+        normalized_path = file_path.replace('\\', '/').strip('/')
+
+        # Full path including project and src directory
+        full_path = os.path.join(self.temp_location, '', normalized_path)
+
+        # Create all parent directories
+        os.makedirs(os.path.dirname(full_path), exist_ok=True)
+
+        # Create __init__.py files in all parent directories
+        self._create_init_files(os.path.dirname(full_path))
+
+        # Write the file content
+        with open(full_path, 'w', encoding='utf-8') as f:
+            f.write(content)
+
+
+
+        print(f"Created file: {full_path}")
+        return full_path, content
 
 
     def add_file(self, file_path: str, content: str):

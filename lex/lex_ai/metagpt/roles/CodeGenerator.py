@@ -42,6 +42,7 @@ from pprint import pprint
 
 from lex_ai.metagpt.roles.CheckpointManager import CheckpointState, CodeGeneratorCheckpoint
 from lex_ai.metagpt.roles.Test import TestInfo
+from lex_ai.models.ApprovalPreference import ApprovalPreference
 from lex_ai.views.UserInteraction import ApprovalType, ApprovalRequest, ApprovalRegistry
 
 
@@ -222,6 +223,7 @@ class CodeGenerator(LexRole):
 
                 regeneration_func = self._regenerate_code_func(class_to_test, generated_code_dict, dependencies, test_import_pool, stderr_info, feedback=feedback)
                 new_code = await CodeReflector.regenerate("".join(reflections), regeneration_func)
+                print("This is the code {}".format(new_code))
 
                 correct_code_so_far[class_to_test] = new_code
 
@@ -245,18 +247,18 @@ class CodeGenerator(LexRole):
                 # Update the generated code dictionary
                 if approved:
                     if self.is_upload(class_to_test):
-                        self.project_generator.add_file(generated_code_dict[real_model_name][0], new_code_model)
+                        self.project_generator.add_file_all(generated_code_dict[real_model_name][0], new_code_model)
                         generated_code_dict[real_model_name] = (
                             generated_code_dict[real_model_name][0], new_code_model, generated_code_dict[real_model_name][2])
 
-                    self.project_generator.add_file(generated_code_dict[class_to_test][0], new_code)
+                    self.project_generator.add_file_all(generated_code_dict[class_to_test][0], new_code)
                     generated_code_dict[class_to_test] = (
                         generated_code_dict[class_to_test][0], new_code, generated_code_dict[class_to_test][2])
 
     def _regenerate_code_func(self, class_to_test, generated_code_dict, dependencies, test_import_pool, stderr_info=None, feedback=None):
-        def regeneration_func(reflection_context):
-            StreamProcessor.global_message_queue.put(StreamProcessor.START_BLOCK_FLAG)
-            self.rc.todo.run(
+        async def regeneration_func(reflection_context):
+            await StreamProcessor.global_message_queue.put(StreamProcessor.START_BLOCK_FLAG)
+            result = await self.rc.todo.run(
                 self.project,
                 self.get_lex_app_context("Lex project"),
                 self.extract_relevant_code(class_to_test, generated_code_dict, dependencies),
@@ -266,7 +268,8 @@ class CodeGenerator(LexRole):
                 stderr_info,
                 reflection_context=reflection_context
             )
-            StreamProcessor.global_message_queue.put(StreamProcessor.END_BLOCK_FLAG)
+            await StreamProcessor.global_message_queue.put(StreamProcessor.END_BLOCK_FLAG)
+            return result
 
         return regeneration_func
 
@@ -279,6 +282,17 @@ class CodeGenerator(LexRole):
         return class_name.replace("Upload", "")
 
     async def request_code_approval(self, content: str, class_name: str) -> ApprovalRequest:
+        if not await ApprovalPreference.is_enabled():
+            return ApprovalRequest(
+                request_id="",
+                approval_type=ApprovalType.CODE_GENERATION,
+                content={
+                    'class_name': class_name,
+                    'code': content,
+                    'project_name': self.project_info.project_name
+                }
+            )
+
         """Request approval for generated code"""
         request_id = await self.approval_registry.create_request(
             ApprovalType.CODE_GENERATION,
@@ -293,6 +307,16 @@ class CodeGenerator(LexRole):
         return approval_request
 
     async def request_code_regeneration_approval(self, regeneration_info: RegenerationInfo) -> ApprovalRequest:
+        if not await ApprovalPreference.is_enabled():
+            return ApprovalRequest(
+                request_id="",
+                approval_type=ApprovalType.CODE_GENERATION,
+                content= {
+                    **(regeneration_info.__dict__),
+                    'project_name': self.project_info.project_name
+                }
+
+            )
         """Request approval for generated code"""
         request_id = await self.approval_registry.create_request(
             ApprovalType.CODE_REGENERATION,
@@ -306,6 +330,17 @@ class CodeGenerator(LexRole):
         return approval_request
 
     async def request_test_approval(self, test_info: Dict[str, Any], test_code: str) -> ApprovalRequest:
+        # if not ApprovalPreference.is_enabled():
+        #     return ApprovalRequest(
+        #         request_id="",
+        #         approval_type=ApprovalType.CODE_GENERATION,
+        #         content= {
+        #             'test_name': test_info['class_name'],
+        #             'test_code': test_code,
+        #             'test_json': test_info.get('test_json'),
+        #             'dependencies': test_info.get('dependencies', [])
+        #         }
+        #     )
         """Request approval for test implementation"""
         request_id = await self.approval_registry.create_request(
             ApprovalType.TEST_GENERATION,
@@ -321,6 +356,17 @@ class CodeGenerator(LexRole):
         return approval_request
 
     async def request_test_after_execution_approval(self, test_info: TestInfo, test_result: Dict[str, Any]) -> ApprovalRequest:
+        # if not ApprovalPreference.is_enabled():
+        #     return ApprovalRequest(
+        #         request_id="",
+        #         approval_type=ApprovalType.CODE_GENERATION,
+        #         content= {
+        #             **(test_info.__dict__),
+        #             'success': test_result['success'],
+        #             'error': test_result.get('error'),
+        #             'console_output': test_result.get('console_output', {}),
+        #         }
+        #     )
         """Request approval for test execution results"""
         request_id = await self.approval_registry.create_request(
             ApprovalType.TEST_AFTER_EXECUTION,
@@ -336,6 +382,12 @@ class CodeGenerator(LexRole):
         return approval_request
 
     async def request_test_execution_approval(self, test_info: TestInfo) -> ApprovalRequest:
+        # if not ApprovalPreference.is_enabled():
+        #     return ApprovalRequest(
+        #         request_id="",
+        #         approval_type=ApprovalType.CODE_GENERATION,
+        #         content=test_info.__dict__
+        #     )
         """Request approval for test execution"""
         request_id = await self.approval_registry.create_request(
             ApprovalType.TEST_EXECUTION,
@@ -387,7 +439,7 @@ class CodeGenerator(LexRole):
 
 
             for class_name, (path, code, _) in generated_code_dict.items():
-                project_generator.add_file(path, code)
+                project_generator.add_file_all(path, code)
 
             for class_name, info in generated_json_dict.items():
                 subprocess_path = info[0]
@@ -397,9 +449,9 @@ class CodeGenerator(LexRole):
                 py_path = info[4]
                 py_code = info[5]
 
-                test_generator.add_file(json_path, json_code)
-                test_generator.add_file(subprocess_path, subprocess_json)
-                test_generator.add_file(py_path, py_code)
+                test_generator.add_file_all(json_path, json_code)
+                test_generator.add_file_all(subprocess_path, subprocess_json)
+                test_generator.add_file_all(py_path, py_code)
 
             # Verify all files exist and regenerate missing ones
             for class_to_generate in all_classes:
@@ -410,7 +462,7 @@ class CodeGenerator(LexRole):
                     if class_to_generate:
                         approved = False
                         user_feedback = ""
-                        while not approved or not ApprovalRegistry.APPROVAL_ON:
+                        while not approved:
                             await StreamProcessor.global_message_queue.put(f"code_file_path:{path}\n")
                             code = await self.generate_class(
                                 lex_app_context=lex_app_context,
@@ -428,7 +480,7 @@ class CodeGenerator(LexRole):
                             user_feedback = approvalRequest.feedback
                             code = approvalRequest.content["code"]
 
-                        project_generator.add_file(path, code)
+                        project_generator.add_file_all(path, code)
                         timestamp = await self.save_current_state(
                             generated_code_dict,
                             generated_json_dict,
@@ -452,7 +504,7 @@ class CodeGenerator(LexRole):
                 path = ""
                 parsed_code = ""
                 class_name = ""
-                while not approved or not ApprovalRegistry.APPROVAL_ON:
+                while not approved:
                     class_name, path = class_to_generate
                     path = path.replace('\\', '/').strip('/')
                     await StreamProcessor.global_message_queue.put(f"code_file_path:{path}\n")
@@ -472,7 +524,7 @@ class CodeGenerator(LexRole):
                     code = approvalRequest.content["code"]
 
                 generated_code_dict[class_name] = (path, code, self.extract_project_imports(parsed_code, project_name))
-                project_generator.add_file(path, code)
+                project_generator.add_file_all(path, code)
                 # Save checkpoint after each class generation
                 timestamp = await self.save_current_state(
                     generated_code_dict,
@@ -482,6 +534,10 @@ class CodeGenerator(LexRole):
                     {},
                     timestamp
                 )
+
+
+
+
 
         max_attempts = 5
 
@@ -540,7 +596,7 @@ class CodeGenerator(LexRole):
             approved = False
             user_feedback = ""
             # Test approval
-            while not approved or not ApprovalRegistry.APPROVAL_ON:
+            while not approved:
                 await StreamProcessor.global_message_queue.put(f"code_file_path:{test_json_path}\n")
 
                 test_json = (await (GenerateJsonRole(
@@ -595,9 +651,10 @@ class CodeGenerator(LexRole):
 
             generated_json_dict[combined_class_name] = start_test_path, content, test_json_path, test_json, test_path, test_file
 
-            test_generator.add_file(test_json_path, test_json)
-            await test_generator.add_file_and_stream(start_test_path, content, queue=StreamProcessor.global_message_queue)
-            await test_generator.add_file_and_stream(test_path, test_file, queue=StreamProcessor.global_message_queue)
+            test_generator.add_file_all(test_json_path, test_json)
+
+            await test_generator.add_file_and_stream_all(start_test_path, content, queue=StreamProcessor.global_message_queue)
+            await test_generator.add_file_and_stream_all(test_path, test_file, queue=StreamProcessor.global_message_queue)
 
     # ------------------------------------------------------------------------------
             test_info = TestInfo(
@@ -663,7 +720,7 @@ class CodeGenerator(LexRole):
 
         # Generate final test configuration
         content = '[\n' + ',\n'.join(subprocesses) + "\n]"
-        await test_generator.add_file_and_stream(
+        await test_generator.add_file_and_stream_all(
             f"{test_json_data_path}/test.json",
             content,
             queue=StreamProcessor.global_message_queue
@@ -676,9 +733,9 @@ class CodeGenerator(LexRole):
             json_path=f"{project_name}/{test_json_data_path}/test.json"
         )
         #
-        await test_generator.add_file_and_stream(f"{test_json_data_path}/test.json", content, queue=StreamProcessor.global_message_queue)
-        await test_generator.add_file_and_stream("_authentication_settings.py", f"initial_data_load = '{project_name}/{test_json_data_path}/test.json'", queue=StreamProcessor.global_message_queue)
-        await test_generator.add_file_and_stream(test_all_path, test_all, queue=StreamProcessor.global_message_queue)
+        await test_generator.add_file_and_stream_all(f"{test_json_data_path}/test.json", content, queue=StreamProcessor.global_message_queue)
+        await test_generator.add_file_and_stream_all("_authentication_settings.py", f"initial_data_load = '{project_name}/{test_json_data_path}/test.json'", queue=StreamProcessor.global_message_queue)
+        await test_generator.add_file_and_stream_all(test_all_path, test_all, queue=StreamProcessor.global_message_queue)
 
         print("--------------------------------------------\n")
 

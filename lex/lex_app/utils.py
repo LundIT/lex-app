@@ -33,7 +33,7 @@ def _is_structure_file(file):
 
 class GenericAppConfig(AppConfig):
     _EXCLUDED_FILES = ("asgi", "wsgi", "settings", "urls", 'setup')
-    _EXCLUDED_DIRS = ('venv', '.venv', 'build', 'migrations')
+    _EXCLUDED_DIRS = ('venv', '.venv', 'build', 'migrations', 'temp_clone')
     _EXCLUDED_PREFIXES = ('_', '.')
     _EXCLUDED_POSTFIXES = ('_', '.', 'create_db', 'CalculationIDs', '_test')
 

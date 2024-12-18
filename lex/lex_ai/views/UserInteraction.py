@@ -10,6 +10,8 @@ import json
 
 from rest_framework_api_key.permissions import HasAPIKey
 
+from lex_ai.models.ApprovalPreference import ApprovalPreference
+
 
 class ApprovalType(Enum):
     CODE_GENERATION = "code_generation"
@@ -36,7 +38,16 @@ class ApprovalRegistry:
     _instance = None
     _requests: Dict[str, ApprovalRequest] = {}
     _events: Dict[str, asyncio.Event] = {}
-    APPROVAL_ON = True
+    @property
+    def APPROVAL_ON(self) -> bool:
+        return self.preference.is_enabled()
+
+    def __init__(self):
+        self.preference = ApprovalPreference()
+
+    @property
+    def APPROVAL_ON(self) -> bool:
+        return self.preference.is_enabled()
 
     def __new__(cls):
         if cls._instance is None:

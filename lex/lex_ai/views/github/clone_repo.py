@@ -19,5 +19,5 @@ class CloneRepo(APIView):
         #
         # response = requests.get(url, headers=headers)
         # access_token = response.json()['access_token']
-        repo = git.Repo.clone_from(f'https://<github_access_token>:x-oauth-basic@github.com/<your_github_username>/DemoWindparkConsolidation', f'{os.getenv("PROJECT_ROOT")}/temp_clone/DemoWindparkConsolidation')
+        repo = git.Repo.clone_from(f'https://token:x-oauth-basic@github.com/hazempgm/DemoWindparkConsolidation', f'{os.getenv("PROJECT_ROOT")}/temp_clone/DemoWindparkConsolidation')
         return JsonResponse({'message': "Project successfully cloned"})
