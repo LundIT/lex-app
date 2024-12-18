@@ -10,7 +10,7 @@ class Preferences(APIView):
 
     async def get(self, request, *args, **kwargs):
         key = request.data.get('key', None)
-        value = PreferenceManager.get_preference(key, None)
+        value = await PreferenceManager.get_preference(key, None)
 
         return JsonResponse({'value': value})
 
@@ -18,5 +18,5 @@ class Preferences(APIView):
         key = request.data.get('key', None)
         value = request.data.get('value', None)
         if not key:
-            PreferenceManager.set_preference(key, value)
+            await PreferenceManager.set_preference(key, value)
         return JsonResponse({'message': 'Preference saved successfully'})

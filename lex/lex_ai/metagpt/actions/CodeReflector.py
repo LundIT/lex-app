@@ -88,6 +88,5 @@ class CodeReflector:
             reflection_result.content,
             self.error_info
         )
-        await StreamProcessor.global_message_queue.put("reflection_done")
         # Step 4: Use existing regeneration prompt with added insights
         return regen_context

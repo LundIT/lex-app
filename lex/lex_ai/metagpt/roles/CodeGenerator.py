@@ -138,7 +138,7 @@ class CodeGenerator(LexRole):
             }
         )
 
-        await StreamProcessor.global_message_queue.put("reflection_approval_required")
+        await StreamProcessor.global_message_queue.put("approval_required")
         approval_request = await self.approval_registry.wait_for_approval(request_id)
         return approval_request
 
@@ -282,9 +282,10 @@ class CodeGenerator(LexRole):
         return class_name.replace("Upload", "")
 
     async def request_code_approval(self, content: str, class_name: str) -> ApprovalRequest:
-        if not await ApprovalPreference.is_enabled():
+        if await ApprovalPreference.is_enabled():
             return ApprovalRequest(
                 request_id="",
+                status=True,
                 approval_type=ApprovalType.CODE_GENERATION,
                 content={
                     'class_name': class_name,
@@ -307,9 +308,10 @@ class CodeGenerator(LexRole):
         return approval_request
 
     async def request_code_regeneration_approval(self, regeneration_info: RegenerationInfo) -> ApprovalRequest:
-        if not await ApprovalPreference.is_enabled():
+        if await ApprovalPreference.is_enabled():
             return ApprovalRequest(
                 request_id="",
+                status=True,
                 approval_type=ApprovalType.CODE_GENERATION,
                 content= {
                     **(regeneration_info.__dict__),

@@ -3,6 +3,7 @@ from django.urls import path
 from lex_ai.views.child_server.run_migrations import RunMigrations
 from lex_ai.views.child_server.run_test import RunTest
 from lex_ai.views.github.repo_status import RepoStatus
+from lex_ai.views.preferences import Preferences
 from lex_ai.views.project_files import ProjectFilesView
 
 from lex_ai.views.project_overview import ProjectOverview
@@ -35,4 +36,5 @@ urlpatterns = [
     path('clone-repo/', CloneRepo.as_view(), name='clone-repo'),
     path('repo-status/', RepoStatus.as_view(), name='repo-status'),
     path('commit-push/', CommitAndPushView.as_view(), name='commit-push'),
+    path("preferences/", Preferences.as_view(), name="preferences"),
 ]
