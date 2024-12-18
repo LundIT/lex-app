@@ -1,9 +1,7 @@
 from asgiref.sync import  sync_to_async
 from lex.lex_ai.metagpt.roles.LLM import LLM
 
-from lex.lex_ai.rag.rag import RAG
 from lex.lex_ai.metagpt.LexContext import LexContext
-from lex.lex_ai.metagpt.TestContext import TestContext
 
 from lex.lex_ai.helpers.StreamProcessor import StreamProcessor
 
@@ -14,12 +12,12 @@ You are Josh, a highly capable and analytical AI Software Engineer. Your task is
 **Incorporate a clear chain-of-thought** in your reasoning to ensure transparency and comprehensiveness in your explanations. When describing the `calculate()` methods, provide **detailed and well-documented pseudo-code** that outlines each step of the calculation process.
     """)
 
-    rag = RAG()
-    i, j = rag.memorize_dir(RAG.LEX_APP_DIR)
-    lex_app_context = "\n".join([rag.query_code("LexModel", i, j, top_k=1)[0],
-            rag.query_code("CalculationModel", i, j, top_k=1)[0],
-            rag.query_code("LexLogger", i, j, top_k=1)[0],
-            rag.query_code("XLSXField", i, j, top_k=1)[0]])
+    # rag = RAG()
+    # i, j = rag.memorize_dir(RAG.LEX_APP_DIR)
+    # lex_app_context = "\n".join([rag.query_code("LexModel", i, j, top_k=1)[0],
+    #         rag.query_code("CalculationModel", i, j, top_k=1)[0],
+    #         rag.query_code("LexLogger", i, j, top_k=1)[0],
+    #         rag.query_code("XLSXField", i, j, top_k=1)[0]])
 
     melih_prompt = f"""
    Lex_app context:

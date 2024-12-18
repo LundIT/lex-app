@@ -1,15 +1,5 @@
-import asyncio
-import re
-
-from asgiref.sync import async_to_sync
 from lex_ai.metagpt.generate_project_code import generate_project_code_prompt_old, regenerate_project_code_prompt
 from metagpt.actions import Action
-from metagpt.roles import Role
-from metagpt.roles.di.data_interpreter import DataInterpreter
-import json
-
-from lex.lex_ai.rag.rag import RAG
-from metagpt.schema import Message
 
 class GenerateCode(Action):
     name: str = "GenerateCode"

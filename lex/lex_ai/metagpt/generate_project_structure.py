@@ -1,10 +1,8 @@
 from asgiref.sync import sync_to_async
 from metagpt.roles.di.data_interpreter import DataInterpreter
-import json
 from lex.lex_ai.metagpt.roles.LLM import LLM
-
-from lex.lex_ai.rag.rag import RAG
 from lex.lex_ai.helpers.StreamProcessor import StreamProcessor
+import json
 
 
 async def generate_project_structure(project_overview, files_with_explanations, project, user_feedback=""):

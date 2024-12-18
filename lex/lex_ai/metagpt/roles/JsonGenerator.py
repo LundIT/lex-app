@@ -1,32 +1,8 @@
-import asyncio
-import os
-import ast
-import sys
-import time
-import networkx as nx
-
-import django
-from asgiref.sync import sync_to_async
-from django.core.management import call_command
-from requests import RequestException
-
-from lex.lex_ai.helpers.StreamProcessor import StreamProcessor
-from lex_ai.helpers.post_request import post_request
 from lex_ai.metagpt.ProjectGenerator import ProjectGenerator
 from lex_ai.metagpt.actions.GenerateJson import GenerateJson
-from lex.lex_ai.rag.rag import RAG
-from lex.lex_app.helpers.run_server import ServerManager
 from metagpt.schema import Message
-from lex.lex_ai.metagpt.prompts.LexPrompts import LexPrompts
-
-from metagpt.roles.role import Role
-from lex.lex_ai.helpers.StreamProcessor import StreamProcessor
-from lex.lex_ai.metagpt.generate_test_for_code import generate_test_for_code, generate_test_for_json
-from lex.lex_ai.metagpt.run_tests import run_tests, get_failed_test_classes
-from lex_ai.metagpt.generate_test_jsons import generate_test_python_jsons, generate_test_python_jsons_alg
+from lex_ai.metagpt.generate_test_jsons import generate_test_python_jsons_alg
 from lex_ai.metagpt.roles.LexRole import LexRole
-from lex_app.helpers.RequestHandler import RequestHandler
-from pprint import pprint
 
 
 

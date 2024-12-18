@@ -1,10 +1,7 @@
 import ast
 import os
-
 import networkx as nx
 from metagpt.roles.role import Role
-
-from lex.lex_ai.rag.rag import RAG
 
 
 class LexRole(Role):
@@ -171,17 +168,17 @@ class LexRole(Role):
             for _, t in code_dict.items()
         ])
     def get_lex_app_context(self, prompt):
-        rag = RAG()
-        i, j = rag.memorize_dir(RAG.LEX_APP_DIR)
+        # rag = RAG()
+        # i, j = rag.memorize_dir(RAG.LEX_APP_DIR)
 
         # lex_app_context = "\n".join([rag.query_code("LexModel", i, j, top_k=1)[0],
         #                              rag.query_code("CalculationModel", i, j, top_k=1)[0],
         #                              rag.query_code("LexLogger", i, j, top_k=1)[0],
         #                              rag.query_code("XLSXField", i, j, top_k=1)[0]])
-        lex_app_context = "\n".join(rag.query_code("LexModel, CalculationModel, XLSXField, LexLogger", i, j, top_k=30))
+        # lex_app_context = "\n".join(rag.query_code("LexModel, CalculationModel, XLSXField, LexLogger", i, j, top_k=30))
 
 
-        return lex_app_context
+        return ""
 
 
 
