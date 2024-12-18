@@ -121,7 +121,7 @@ if os.getenv("LEX_ENVIRONMENT_TAG", "envvar_not_existing") == "dev":
 else:
     DEBUG = False
 
-ALLOWED_HOSTS = [os.getenv("DOMAIN_HOSTED", "localhost"), os.getenv("AI_DOMAIN_HOSTED", "localhost"), '127.0.0.1', 'localhost',
+ALLOWED_HOSTS = [os.getenv("DOMAIN_HOSTED", "localhost"), os.getenv("AI_DOMAIN_HOSTED", "localhost"), '127.0.0.1', '0.0.0.0', 'localhost',
                  os.environ.get('POD_IP', default='envvar_not_existing')]
 if os.getenv("KUBERNETES_ENVIRONMENT", "envvar_not_existing") == "AGI":
     ALLOWED_CIDR_NETS = ['172.16.0.0/12']
