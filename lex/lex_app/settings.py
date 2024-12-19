@@ -131,7 +131,6 @@ else:
 LOGIN_REDIRECT_URL = '/process_admin/all'
 
 CSRF_TRUSTED_ORIGINS = ['https://*.' + os.getenv("DOMAIN_HOSTED", "localhost")]
-
 REACT_APP_BUILD_PATH = (Path(__file__).resolve().parent.parent / Path("react/build")).as_posix()
 repo_name = os.getenv("PROJECT_ROOT").split("/")[-1]
 LEGACY_MEDIA_ROOT = os.path.join(NEW_BASE_DIR, f"{repo_name}/")
@@ -182,7 +181,7 @@ LOGGING = {
 INSTALLED_APPS = [
     'channels',
     'lex.lex_app.apps.LexAppConfig',
-    'lex_ai',
+    'lex_ai.apps.LexAiConfig',
     repo_name,
     "adrf",
     'celery',
