@@ -1,5 +1,6 @@
 """lex-app Command Line Interface."""
 import os
+import shutil
 import sys
 from pathlib import Path
 
@@ -23,6 +24,11 @@ os.environ.setdefault(
 )
 os.environ.setdefault("LEX_APP_PACKAGE_ROOT", LEX_APP_PACKAGE_ROOT)
 os.environ.setdefault("METAGPT_PROJECT_ROOT", LEX_APP_PACKAGE_ROOT)
+
+
+if os.getenv("AI_PROJECT_NAME"):
+    shutil.rmtree(f"{os.getenv('PROJECT_ROOT')}/{os.getenv('AI_PROJECT_NAME')}", ignore_errors=True)
+    shutil.rmtree(f"{os.getenv('PROJECT_ROOT')}/temp_clone/{os.getenv('AI_PROJECT_NAME')}", ignore_errors=True)
 
 django.setup()
 
