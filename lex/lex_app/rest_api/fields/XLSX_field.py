@@ -10,6 +10,11 @@ from pandas.api.types import is_datetime64_any_dtype as is_datetime
 class XLSXField(FileField):
     max_length = 300
 
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault('max_length', 255)
+        super().__init__(*args, **kwargs)
+        kwargs.setdefault('max_length', 255)
+
     cell_format = '#,##0.00 ;[Red]-#,##0.00 ;_-* "-"??_-'
     cell_format_without_color = '#,##0.00 ;-#,##0.00 ;_-* "-"??_-'
     boolean_format = '[Green]"TRUE";[Red]"FALSE";[Red]"FALSE";[Red]"FALSE"'
