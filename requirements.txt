@@ -8,7 +8,6 @@ djangorestframework-api-key @ git+https://github.com/LundIT/djangorestframework-
 django-filter
 django-extensions
 drf-oidc-auth @ git+https://github.com/LundIT/drf-oidc-auth
-metagpt @ git+https://github.com/LundIT/MetaGPT-lex
 mozilla-django-oidc
 XlsxWriter
 scipy
