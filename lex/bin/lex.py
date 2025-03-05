@@ -27,9 +27,11 @@ os.environ.setdefault("METAGPT_PROJECT_ROOT", LEX_APP_PACKAGE_ROOT)
 
 
 if os.getenv("AI_PROJECT_NAME"):
-    shutil.rmtree(f"{os.getenv('PROJECT_ROOT')}/{os.getenv('AI_PROJECT_NAME')}", ignore_errors=True)
-    shutil.rmtree(f"{os.getenv('PROJECT_ROOT')}/temp_clone/{os.getenv('AI_PROJECT_NAME')}", ignore_errors=True)
-
+    path = Path(os.getenv('PROJECT_ROOT'), os.getenv('AI_PROJECT_NAME'))
+    shutil.rmtree(Path(path, os.getenv('INNER_FOLDER_PATH')).resolve(), ignore_errors=True)
+    shutil.rmtree(Path(path, 'temp_clone', os.getenv('AI_PROJECT_NAME', '')).resolve(), ignore_errors=True)
+    
+    
 django.setup()
 
 lex = click.Group()
