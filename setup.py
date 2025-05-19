@@ -1,11 +1,11 @@
 from setuptools import setup, find_packages
 
-with open('requirements.txt') as f:
+with open("requirements.txt") as f:
     install_requires = f.read().splitlines()
 
 setup(
     name="lex-app",
-    version="1.0.8",
+    version="1.0.9",
     author="Melih Sünbül",
     author_email="m.sunbul@lund-it.com",
     description="A Python / Django library to create business applications easily with complex logic",
@@ -14,8 +14,8 @@ setup(
     packages=find_packages(),
     include_package_data=True,
     entry_points={
-        'console_scripts': [
-            'lex = lex.__main__:main',
+        "console_scripts": [
+            "lex = lex.__main__:main",
         ]
     },
     classifiers=[
@@ -24,5 +24,5 @@ setup(
         "Operating System :: OS Independent",
     ],
     install_requires=install_requires,
-    python_requires='>=3.6',
+    python_requires=">=3.6",
 )
