@@ -40,5 +40,5 @@ sqlalchemy
 django_redis
 django-storages[google]
 pillow
-DjangoSharepointStorage==1.1.6
+DjangoSharepointStorage==1.1.7
 click
