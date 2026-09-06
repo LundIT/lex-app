@@ -1,3 +1,11 @@
+## [2.1.11] - 2026-09-06
+
+> **Frontend changes for this release are not yet recorded.**
+
+### Fixed
+- **backend** callable XLSX report helpers, and the max_length that never applied ([b1dfa006](https://github.com/ExcellenceCloudGmbH/lex-app/commit/b1dfa006)) (#753)
+- **backend** stop a script rerun killing the token refresher ([ee525c43](https://github.com/ExcellenceCloudGmbH/lex-app/commit/ee525c43)) (#752)
+
 ## [2.1.10] - 2026-09-04
 
 > **Frontend changes for this release are not yet recorded.**
