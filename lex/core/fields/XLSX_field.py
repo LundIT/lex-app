@@ -59,12 +59,23 @@ def _excel_display_naive(df):
 
 
 class XLSXField(FileField):
+    #: Default column width for report paths. Django's FileField default of
+    #: 100 is too tight for the nested-prefix + timestamp names reports
+    #: generate ("Reports/<Model>/<name>_<YYYYmmdd_HH_MM>.xlsx"), and the
+    #: storage layer silently truncates rather than erroring when a name
+    #: does not fit. Passing ``max_length=`` explicitly still wins.
     max_length = 300
 
     cell_format = '#,##0.00 ;[Red]-#,##0.00 ;_-* "-"??_-'
     cell_format_without_color = '#,##0.00 ;-#,##0.00 ;_-* "-"??_-'
     boolean_format = '[Green]"TRUE";[Red]"FALSE";[Red]"FALSE";[Red]"FALSE"'
 
+    def __init__(self, *args, **kwargs):
+        # ``max_length`` above is only a default: FileField.__init__ would
+        # otherwise setdefault it to 100 and Field.__init__ would shadow the
+        # class attribute with that, which is why the 300 never took effect.
+        kwargs.setdefault("max_length", self.max_length)
+        super().__init__(*args, **kwargs)
 
     def get_number_of_rows_to_insert(self, sheet, index_len):
         max_len = 0
@@ -177,6 +188,7 @@ class XLSXField(FileField):
         self.save(path, content=File(excel_file), save=False)
         
         return excel_file
+
 
 class XLSXFieldFile(FieldFile):
     """The object ``instance.<xlsx_field>`` returns.
