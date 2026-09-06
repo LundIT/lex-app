@@ -22,7 +22,7 @@
 | 10. API Layer | 13 | 71 | 21 | 0 | 0 |
 | 11. Stress & Performance | 9 | 22 | 0 | 0 | 0 |
 | 12. Serializer Contract | 10 | 48 | 16 | 0 | 0 |
-| 13. Export Endpoint | 7 | 37 | 7 | 0 | 0 |
+| 13. Export Endpoint | 8 | 45 | 15 | 0 | 0 |
 | 14. AG Grid Query Endpoint | 6 | 33 | 0 | 0 | 0 |
 | 15. Calculation Logging Surface | 8 | 34 | 13 | 0 | 0 |
 
@@ -258,6 +258,7 @@
 | 13e |  |  | complete | 0 | 0 | 0 | on disk; per-letter tally folded into cluster top-line in pre-migration dashboard |
 | 13f | Export renders datetimes in the requester's browser timezone | 13.31-13.33 | complete | 3 | 0 | 0 | Excel has no tz type, so aware-UTC datetimes must be baked as a local wall-clock at export time. Both write paths render in the requester's zone (frontend sends `timezone` on the export request) — legacy pandas (_to_excel_naive) and streaming/fast (_normalize_cell_value) — falling back to settings.TIME_ZONE for absent/invalid. Ships with the USE_TZ=True cutover. |
 | 13g | Report-file Excel boundary renders and re-reads the display zone | 13.34-13.37 | complete | 4 | 0 | 0 | XLSXField.create_excel_file_from_dfs crashed on the aware datetimes USE_TZ=True introduced ("Excel does not support datetimes with timezones"). _excel_display_naive renders aware values as settings.TIME_ZONE wall-clock and strips tzinfo -- data columns, object columns, (multi)index and column headers. Round-trip proven — a cell read back from the file re-assigned to a LexModel DateTimeField restores the exact original instant via the 3g invariant. |
+| 13h | Report-file fields are callable from the value, and wide enough for report paths | 13.38-13.45 | complete | 8 | 0 | 0 | Two independent traps in the same declaration. XLSXField's helpers are written against a FieldFile (create_excel_file_from_dfs ends in self.save(..., save=False)) but lived only on the field class, so self.report.create_excel_file_from_dfs(...) raised AttributeError and only the unbound XLSXField.create_excel_file_from_dfs(self.report, ...) worked. attr_class = XLSXFieldFile binds the same function objects, so both spellings resolve to one implementation. Separately XLSXField.max_length = 300 was dead -- FileField.__init__ setdefaults 100 and Field.__init__ shadows the class attribute -- so every bare XLSXField()/PDFField() was varchar(100), over which Django's storage silently truncates and suffixes the filename. Both fields now setdefault their advertised width. Downstream apps get one AlterField per report column on their next makemigrations. |
 
 ## 14. AG Grid Query Endpoint (`queries`)
 

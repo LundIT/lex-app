@@ -22,6 +22,8 @@ Rule #3: no cross-cluster imports — stood up fresh here.
 from __future__ import annotations
 
 from django.db import models
+from lex.core.fields.PDF_field import PDFField
+from lex.core.fields.XLSX_field import XLSXField
 from lex.core.models.LexModel import LexModel, PermissionResult
 
 EXPORT_STATUS_ACTIVE = "active"
@@ -231,3 +233,36 @@ MASKED = "exportmaskeditem"
 FAST = "fastexportitem"
 
 
+
+
+class XlsxReportProbe(LexModel):
+    """Report-file subject for Cluster 13h — the field-binding contract.
+
+    Downstream apps declare report columns exactly like this — bare
+    ``XLSXField(null=True, blank=True)``, no ``max_length`` — and then write
+    them from ``calculate()``. Both spellings of the write must work:
+
+    * ``XLSXField.create_excel_file_from_dfs(self.report, ...)`` — the
+      historical unbound form used across every Lex app, and
+    * ``self.report.create_excel_file_from_dfs(...)`` — the form that reads
+      naturally and that customers reach for first.
+
+    The bare declaration is the point: it is what makes ``max_length``
+    default-driven rather than caller-supplied.
+    """
+
+    name = models.CharField(max_length=200, default="probe")
+    report = XLSXField(null=True, blank=True)
+    attachment = PDFField(null=True, blank=True)
+
+    class Meta:
+        app_label = "lex_app"
+
+    def __str__(self) -> str:  # pragma: no cover
+        return f"XlsxReportProbe<{self.name}>"
+
+    def permission_read(self, uc):
+        return PermissionResult.allow_all("cluster 13h: probe read-open")
+
+    def permission_edit(self, uc):
+        return PermissionResult.allow_all("cluster 13h: probe edit-open")
