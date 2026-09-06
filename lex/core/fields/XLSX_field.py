@@ -6,6 +6,7 @@ import pandas as pd
 from django.conf import settings
 from django.core.files import File
 from django.db.models import FileField
+from django.db.models.fields.files import FieldFile
 from openpyxl.styles import Font, Border, Side
 from pandas.api.types import is_datetime64_any_dtype as is_datetime
 
@@ -176,3 +177,34 @@ class XLSXField(FileField):
         self.save(path, content=File(excel_file), save=False)
         
         return excel_file
+
+class XLSXFieldFile(FieldFile):
+    """The object ``instance.<xlsx_field>`` returns.
+
+    ``XLSXField``'s report helpers are written against a *FieldFile*, not
+    against the field: :meth:`~XLSXField.create_excel_file_from_dfs` ends in
+    ``self.save(name, content, save=False)``, which is the FieldFile API. So
+    they only ever worked when called unbound on the field class —
+    ``XLSXField.create_excel_file_from_dfs(self.report, ...)`` — while the
+    natural ``self.report.create_excel_file_from_dfs(...)`` raised
+    ``AttributeError: 'FieldFile' object has no attribute ...``.
+
+    Binding the same function objects here makes both spellings work. The
+    unbound form is untouched: the functions still live on ``XLSXField``, so
+    existing call sites resolve to exactly the same code.
+    """
+
+    get_number_of_rows_to_insert = XLSXField.get_number_of_rows_to_insert
+    insert_rows_before_first_row = XLSXField.insert_rows_before_first_row
+    split_entries_in_sheet = XLSXField.split_entries_in_sheet
+    create_pivotable_row = XLSXField.create_pivotable_row
+    create_excel_file_from_dfs = XLSXField.create_excel_file_from_dfs
+
+
+# Writes to storage, so it carries the same template-safety marker Django puts
+# on FieldFile.save/open/delete.
+XLSXFieldFile.create_excel_file_from_dfs.alters_data = True
+
+# Not a field kwarg and not part of deconstruct(), so this generates no
+# migration; it only changes which class the descriptor wraps values in.
+XLSXField.attr_class = XLSXFieldFile
