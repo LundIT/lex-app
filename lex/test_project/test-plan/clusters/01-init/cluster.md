@@ -200,3 +200,143 @@ does not remove user launch configurations.
 **Why a regression matters:** silent. Without a published expiry the caller has nothing to schedule against; if the proxy keeps the older token, every renewal is discarded and the session still dies at the original expiry — no error anywhere, just a user sent back to the login page mid-work.
 
 **Scenario range:** 1.217 – 1.222. **Test file:** `lex/test_project/tests/init/test_1aa_embedded_token_renewal.py`. **Type:** U. **Status:** ✅ 6 pass.
+
+---
+
+### 1ab. Ignored client-role self-cleanup (`client-admin` platform role, LEX-5) ✅
+
+**What it tests:** `lex init` builds tenant authz from every role found on the Keycloak client; roles in `IGNORED_CLIENT_ROLES` get no `Policy - <role>`. The sync only ever ADDS policies via Keycloak's import endpoint — it never deletes an entry just because it's missing from the re-imported payload — so a policy minted by an older lex-app for a role that later became ignored (here: the new platform-internal `client-admin` role, replacing the abandoned `release-manager`) would persist forever without an explicit cleanup step.
+
+**Why a regression matters:** a stale `Policy - client-admin` silently grants tenant-app authorization to a role that is meant to be platform-internal only — exactly the authorization leak LEX-5 exists to close.
+
+| Scenario | Title | Asserts |
+| --- | --- | --- |
+| 1.223 | ignore-set contents | `client-admin` is in `IGNORED_CLIENT_ROLES`; the superseded `release-manager` is not |
+| 1.224 | stale policy removed from config | a pre-existing `Policy - client-admin` is dropped from `auth_config['policies']` |
+| 1.225 | reference detached from permission | a permission's `config.applyPolicies` has `Policy - client-admin` removed, other applied policies survive in order |
+| 1.226 | no-op when nothing stale | a config with no ignored-role policy is left byte-for-byte unchanged |
+| 1.227 | live delete by id | a live `Policy - client-admin` found via `get_client_authz_policies` is deleted via `delete_client_authz_policy` using its id |
+| 1.228 | no-op when nothing live | no matching live policy → `delete_client_authz_policy` is never called |
+| 1.229 | missing-id fail-fast | a matching live policy record without an `id` raises `CommandError` (mirrors `delete_resources_individual`'s permission-id check) |
+
+**Scenario range:** 1.223 – 1.229. **Test file:** `lex/test_project/tests/init/test_1ab_ignored_role_policy_cleanup.py`. **Type:** U. **Status:** ✅ 7 pass. Source: `lex/lex_app/management/commands/init.py` (`IGNORED_CLIENT_ROLES`, `strip_ignored_role_policies`, `delete_stale_ignored_role_policies`). Design: `local_wiki/projects/admin-role-separation-5/README.md`. The live-delete-after-import ordering (so Keycloak's referential-integrity check on the policy delete passes) is not verified against a live Keycloak instance.
+
+### 1ac. Streamlit session survival across an idle period ✅
+
+**What it tests:** that a Streamlit dashboard left open and idle keeps working. Streamlit reads request headers off the *WebSocket handshake* (`st.context.headers` resolves the session's client), so every credential the proxy injects is a snapshot taken once, when the socket opened — and the socket then stays open for hours. Renewal therefore has to come from a channel that is still live: the proxy's `/auth/token`, which owns the refresh token and remains the only component allowed to spend it.
+
+**Why a regression matters:** it is what the user sees. Before this batch an idle tab died on the access token's own lifetime and reported "Authentication Error: Missing user information" — a message about identity headers that were in fact present, on a page that could not recover, because the next rerun re-read the same frozen headers and invalidated again.
+
+| Scenario | Title | Asserts |
+| --- | --- | --- |
+| 1.230 | `/auth/token` needs the internal secret | a valid session cookie alone gets a 403 — page script can `fetch` with credentials, so the HttpOnly cookie must not be enough to exfiltrate a bearer token |
+| 1.231 | the pull returns a token valid *now* | the response carries the refreshed token and its expiry, not the stale stored copy |
+| 1.232 | the refresh token is never handed out | absent from the response — two components rotating it is the race the pull channel exists to avoid |
+| 1.233 | an unrenewable session is a 401 | the caller must distinguish "renewed" from "sign in again" |
+| 1.234 | session outranks the `st_access` cookie (HTTP) | forwarded as session auth *with* the refresh token; the cookie is set on every login, so consulting it first classified a fresh login as unrenewable `jwt` |
+| 1.235 | an explicit `auth_token` still wins | the embedded renewal handoff keeps its precedence over the session |
+| 1.246 | the WS handshake carries the renewable credential | the one moment a long-lived connection is handed anything must hand it the session's refresh token |
+| 1.236 | a stale handshake token never replaces a renewed one | adopting on inequality reverted every renewal on the next rerun |
+| 1.237 | a genuinely newer handshake token is adopted | a reconnect or a re-sourced iframe is a legitimate renewal path |
+| 1.238 | renewal pulls from the proxy | the refresh token in session state stays untouched while the proxy answers |
+| 1.239 | fallback when no proxy answers | the refresh token is spent only then — no second writer to race |
+| 1.240 | identity survives an unrenewable token | the user stays authenticated and identified, flagged only as needing renewal |
+| 1.241 | permissions are kept when Keycloak fails | a failed UMA lookup must not silently demote the user to no access |
+| 1.242 | the refresher runs for session auth too | "the proxy handles it" meant nobody did — the proxy only delivers at handshake time |
+| 1.243 | the refresher stops with the session | closing a tab sets no session-state flag, so a flag-only refresher outlived every abandoned session |
+| 1.244 | a transient failure stays invisible | a proxy restart must not put a re-auth notice in front of someone reading a chart |
+| 1.245 | a persistent failure surfaces recovery | past the grace window the cause is SSO max lifetime or a revoked session; a successful renewal clears the stamp |
+
+**Scenario range:** 1.230 – 1.246. **Test file:** `lex/test_project/tests/init/test_1ac_streamlit_session_survival.py`. **Type:** U. **Status:** ✅ 17 pass.
+
+### 1ad. Streamlit's asset bundle served ungated, and session durability ✅
+
+**What it tests:** that loading a Streamlit dashboard is fast, quiet, and survives its own credential. Streamlit's frontend is code-split — 1.61 ships 365 JS chunks and names 107 of them in eager `<link rel="modulepreload">` tags — and the proxy in front of it authenticated every request through one catch-all route whose deny ran before it looked at the path. The bundle is therefore served by the proxy itself and never gated: it is package content from the installed wheel, identical for every install, with no tenant data and no identity. Everything else on the same host is the opposite, so half these scenarios exist to hold that line.
+
+**Why a regression matters:** it is all three reports customers filed. Gate the bundle again and a credential-less moment is a hundred 401s, a cold start four times heavier than it needs to be, and — the one they saw — `TypeError: Failed to fetch dynamically imported module`, because Vite reports an HTTP failure on a dynamic `import()` as a type error. Widen the public allowlist by one path instead, and a dashboard becomes readable by anyone who knows the URL.
+
+| Scenario | Title | Asserts |
+| --- | --- | --- |
+| 1.247 | a chunk needs no credential | a hashed JS chunk returns 200 with no cookie, no `auth_token`, no `Authorization` |
+| 1.248 | cache headers cut both ways | content-addressed files are `immutable` for a year; `manifest.json` is `no-cache` — a stale manifest names dead hashes and causes the same TypeErrors from a different direction |
+| 1.249 | the bundle is compressed | a gzip-accepting client gets `Content-Encoding: gzip`, and compression actually reduces the bytes |
+| 1.250 | hashes cannot drift | the served directory is exactly `streamlit.file_util.get_static_dir()`, and holds the `index.html` that names the hashes |
+| 1.251 | a missing bundle degrades | an unlocatable bundle adds no routes and raises nothing — a slow authenticated `/static` beats an app that will not boot |
+| 1.252 | bootstrap endpoints are public | `/_stcore/health` and `/_stcore/host-config` reach the upstream with no credential (probes have no session; host-config is read before the WebSocket exists) |
+| 1.253 | the public path asserts no identity | none of the `X-Streamlit-User-*` / `X-Forwarded-User` headers are attached, so nothing downstream can read an anonymous probe as a signed-in user |
+| 1.254 | the boundary holds | `/`, `/media/**`, `/_stcore/upload_file` and an arbitrary app route all still 401 |
+| 1.255 | the socket is not public | an unauthenticated upgrade to `/_stcore/stream` is closed, not accepted |
+| 1.256 | the upstream client is pooled | four sequential requests share one client, not one each |
+| 1.257 | `Content-Encoding` survives | an encoded upstream body is relayed still encoded, so the saving is not thrown away |
+| 1.258 | every cookie survives | two upstream `Set-Cookie` headers both reach the client — losing Streamlit's XSRF cookie breaks the handshake |
+| 1.259 | the referrer is not leaked | proxied responses carry `Referrer-Policy: no-referrer`; the document URL holds a JWT |
+| 1.260 | a failed refresh keeps its keys | stale keys survive an unreachable Keycloak, and the retry is deferred — returning `None` used to reject every token in the cluster |
+| 1.261 | cold cache plus failure | no keys reported, and nothing raised (a raise here would become a 500 instead of an actionable 401) |
+| 1.262 | one fetch, not a hundred | 25 concurrent callers share a single blocking fetch |
+| 1.263 | reading keys never fetches | a cold cache reads as empty rather than blocking the event loop |
+| 1.264 | you come back where you were | `auth_callback` honours the stashed `next` instead of redirecting to `/` |
+| 1.265 | a hostile `next` is refused | `//host`, `https://host`, `http://host`, `/\host`, `\\host`, a bare host and `javascript:` are all rejected; same-origin paths survive intact |
+| 1.266 | the session is not trusted | an off-origin path already in the session still falls back to `/` — validating only on entry is how open redirects survive review |
+| 1.267 | the breakout can recover | the iframe recovery page's sign-in link is absolute, `target="_top"`, and carries the view being recovered |
+| 1.268 | stripping keeps the destination | removing `auth_token` preserves `model`, `pk` and the rest — dropping them would trade one bug for another |
+| 1.269 | only documents are redirected | `document` and `iframe` count; `empty` and `script` do not, so an XHR is served rather than 303'd |
+| 1.270 | the session key is derived, not demanded | `DJANGO_SECRET_KEY` yields a durable cookie key, and is not reused verbatim |
+| 1.271 | no configuration refuses to start | explicit secret, derivable secret, neither, and the published default all boot; only the first two are durable |
+| 1.272 | replicas need a shared store | `LEX_PROXY_REPLICAS>1` without Redis raises; with Redis it boots |
+| 1.273 | an unusable cookie is refused | `SameSite=None` without `Secure` raises (browsers discard such cookies outright), and so does a typo |
+| 1.274 | cross-site frames get a cookie | https defaults to `SameSite=None`; local http stays `lax` |
+| 1.275 | the session window outlasts a login | `--server.disconnectedSessionTTL` is passed and exceeds Streamlit's 120s default |
+| 1.276 | the CLI reports without blocking | the pre-flight warns about an undurable session key rather than refusing to start |
+
+**Scenario range:** 1.247 – 1.302. **Test file:** `lex/test_project/tests/init/test_1ad_proxy_assets_and_session_durability.py`. **Type:** U. **Status:** ✅ 56 pass, 42 subtests. **27 of the first 30 fail against the pre-fix tree**; 1.254, 1.255 and 1.271 pass by design as guards. Measured and explicitly not a cause: JWT validation at 0.045 ms/request — 16 ms across all 365 chunks. Recorded **BUG-029** (a pre-existing cluster-1 flake) while running this batch.
+
+| Scenario | Title | Asserts |
+| --- | --- | --- |
+| 1.277 | the strip hands over every credential | the `auth_token` redirect re-issues `st_access`, so it never delivers fewer credentials than the response it replaces |
+| 1.278 | a bodiless response yields nothing | a 304 relays with no body chunk — `b""` would make GZip attach a body to it |
+| 1.279 | a mid-body failure is not a truncated 200 | the error propagates, so the browser sees a network error rather than a half-delivered chunk |
+| 1.280 | a probe with a body is not a 500 | `Content-Length` is never forwarded; httpx recomputes it from the real body |
+| 1.281 | the pooled client is per event loop | two successive loops get different clients |
+| 1.282 | the single-flight lock is per event loop | contended acquisition on a second loop does not raise |
+| 1.283 | a malformed integer setting does not stop the proxy | `LEX_PROXY_REPLICAS=auto` warns and defaults to 1 |
+| 1.284 | the bundle follows `baseUrlPath` | the mount moves to `/app/static`, and is not also left at `/static` |
+| 1.285 | the pre-flight mirrors the cookie rules | `SameSite=none` without `Secure`, and an invalid value, both fail on the main thread |
+| 1.286 | the https test agrees on both sides | `HTTPS://host` is recognised as a deployment by the CLI, as it is by the proxy |
+
+**Scenarios 1.277 – 1.286** were added after an adversarial review of the first pass. All ten defects they pin lived in the *new* code, and four would have reproduced one of the three original symptoms by a different route — which is the argument for reviewing a fix as hard as the bug.
+
+| Scenario | Title | Asserts |
+| --- | --- | --- |
+| 1.287 | renewal reaches the proxy without an iframe reload | a newer token POSTed to `/auth/adopt` is adopted, and the session outlives its bootstrap token |
+| 1.288 | only the configured frontend may adopt | a foreign `Origin` and a missing one are both 403 |
+| 1.289 | adoption still validates | an unverifiable token is 401, an absent one 400 |
+| 1.290 | the preflight is answerable and scoped | 204 naming POST for the allowed origin, 403 for any other |
+| 1.291 | the allowlist derives from the instance hostname | `DOMAIN_HOSTED` alone permits adoption, and never `*` |
+| 1.292 | the localhost default is not promoted | `DOMAIN_HOSTED=localhost` trusts the shell's dev ports, not `https://localhost` |
+
+**Scenarios 1.287 – 1.290** exist because the earlier fixes created the gap between them: freezing the iframe `src` protects the Streamlit session but removed the only channel a renewed token had. Verified before fixing — an embedded session 401s past its bootstrap token's expiry with a valid renewal sitting unused in the shell.
+
+| Scenario | Title | Asserts |
+| --- | --- | --- |
+| 1.293 | a closed pooled connection is retried | a request after the upstream's keep-alive expiry succeeds on a fresh connection |
+| 1.294 | the pool expires before the upstream does | the proxy's keep-alive expiry undercuts uvicorn's 5s, and reaches the client |
+| 1.295 | an unreachable upstream answers 502 | `RemoteProtocolError` yields 502 on both the public and the authenticated path |
+
+**Scenarios 1.293 – 1.295** come from a production log rather than review: pooling connections is what made a stale one possible, and `RemoteProtocolError` escaped both existing handlers as an unhandled ASGI exception. `/media/...` is proxied, so the visible symptom was a document download that failed for no stated reason.
+
+| Scenario | Title | Asserts |
+| --- | --- | --- |
+| 1.296 | a failed request is logged at WARNING | a 404 asset and a 401 path both appear with method, path and status |
+| 1.297 | a successful asset stays quiet | suppressed by default, logged under `LEX_PROXY_ACCESS_LOG_STATIC` |
+| 1.298 | the log never carries the query string | `?auth_token=<jwt>` is recorded as `?<query>`, status preserved |
+| 1.299 | logging can be turned off | `LEX_PROXY_ACCESS_LOG=false` silences it without changing the response |
+
+**Scenarios 1.296 – 1.299** exist because the production log for the bug in 1.293–1.295 had **no access lines**, so an asset failure could not be told apart from an auth failure or a missing file without curling the live host afterwards.
+
+| Scenario | Title | Asserts |
+| --- | --- | --- |
+| 1.300 | Streamlit's control exceptions are not Exceptions | `StopException`/`RerunException` derive from `BaseException`, so `except Exception` misses them |
+| 1.301 | the stop flag survives a rerun | a read interrupted by either is "do not stop", and raises nothing |
+| 1.302 | a real stop flag is still obeyed | the guard swallows control exceptions, not the answer |
+
+**Scenarios 1.300 – 1.302** close the last live cause of the original report: the token refresher died on a script rerun, and a dead one is only replaced on the *next* run — so a rerun followed by idleness left nothing renewing the token. Found in a production log, which was only readable because 1.296–1.299 added the access log.

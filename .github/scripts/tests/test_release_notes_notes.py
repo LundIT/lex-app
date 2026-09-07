@@ -319,3 +319,294 @@ def test_the_resolved_callable_carries_the_overridden_model():
     )
     call("P", post=fake_post)
     assert "gemini-3-ultra" in captured["url"]
+
+
+def test_prompt_tells_the_model_to_write_from_the_detail():
+    flat = " ".join(notes.build_prompt(_digest(), exemplar="X").split())
+    assert "Base your description on the detail, not the subject." in flat
+    assert "Do not invent specifics to fill the gap" in flat
+
+
+def test_prompt_includes_the_detail_text():
+    d = {"tag": "v1", "previous_tag": None, "changes": [
+        {"sha": "a", "component": "backend", "type": "fix", "scope": "auth",
+         "breaking": False, "subject": "renew the token", "pr_number": 678,
+         "internal": False, "detail": "Sessions died at the original deadline."},
+    ]}
+    assert "Sessions died at the original deadline." in notes.build_prompt(d, exemplar="X")
+
+
+def test_an_oversized_digest_is_trimmed_into_budget():
+    changes = [
+        {"sha": f"{i}", "component": "backend", "type": "fix", "scope": "auth",
+         "breaking": False, "subject": f"fix {i}", "pr_number": i,
+         "internal": False, "detail": "y" * 9000}
+        for i in range(20)
+    ]
+    prompt = notes.build_prompt(
+        {"tag": "v1", "previous_tag": None, "changes": changes}, exemplar="X"
+    )
+    assert len(prompt.encode("utf-8")) <= notes.MAX_PROMPT_BYTES
+    # Still describes every change, just more briefly.
+    for i in range(20):
+        assert f"fix {i}" in prompt
+
+
+def test_fallback_body_is_visible_in_rendered_markdown():
+    digest = {"tag": "v2.1.8", "previous_tag": "v2.1.7", "changes": [
+        {"sha": "abc1234", "component": "backend", "type": "fix", "scope": None,
+         "breaking": False, "subject": "a fix", "pr_number": 1, "internal": False},
+    ]}
+    body = notes.fallback(digest, reason="ValueError: boom")
+
+    # The machine marker stays for tooling...
+    assert notes.FAILURE_MARKER in body
+    # ...but a human reading the rendered release must also see it.
+    assert notes.FAILURE_NOTICE in body
+    assert not notes.FAILURE_NOTICE.startswith("<!--")
+    assert "boom" in body
+
+
+def test_append_addendum_preserves_the_original_body():
+    body = "## Main changes\n\n- **New sidebar.** More room for your data.\n"
+    out = notes.append_addendum(body, "### Frontend changes\n\n- a fix\n")
+
+    # Assert the exact joint, not a substring: `body.rstrip() in out` is true
+    # whether or not the implementation rstrips, so it cannot pin the contract.
+    assert out.startswith(body.rstrip() + "\n\n" + notes.ADDENDUM_MARKER + "\n\n")
+    assert out.endswith("- a fix\n")
+    assert "a fix" in out
+
+
+def test_append_addendum_is_idempotent():
+    body = "## Main changes\n\n- something\n"
+    once = notes.append_addendum(body, "### Frontend changes\n\n- a fix\n")
+    twice = notes.append_addendum(once, "### Frontend changes\n\n- a fix\n")
+
+    assert once == twice
+    assert twice.count(notes.ADDENDUM_MARKER) == 1
+
+
+def test_append_addendum_never_drops_content_on_a_second_different_call():
+    body = "## Main changes\n\n- something\n"
+    once = notes.append_addendum(body, "### Frontend changes\n\n- first\n")
+    # A later call with different text must not silently replace the first.
+    twice = notes.append_addendum(once, "### Frontend changes\n\n- second\n")
+
+    assert "first" in twice
+    assert "second" not in twice          # refuses rather than overwrites
+
+
+# ── Heading tolerance ─────────────────────────────────────────────────
+#
+# v2.1.9 drafted 14 usable lines and threw them away: `validate` matched
+# "## Main changes" as a case- and level-sensitive substring, and the model
+# had emitted a variant. The heading it chose is a formatting detail, not a
+# reason to discard the note — so recognise the variants, and rewrite them to
+# the canonical form so the published body stays consistent either way.
+
+HEADING_VARIANTS = [
+    ("wrong case",        "## Main Changes"),
+    ("all caps",          "## MAIN CHANGES"),
+    ("deeper level",      "### Main changes"),
+    ("shallower level",   "# Main changes"),
+    ("bold pseudo",       "**Main changes**"),
+    ("trailing colon",    "## Main changes:"),
+    ("extra spacing",     "##   Main   changes"),
+]
+
+
+@pytest.mark.parametrize("label,heading", HEADING_VARIANTS, ids=[c[0] for c in HEADING_VARIANTS])
+def test_validation_accepts_recognisable_heading_variants(label, heading):
+    body = f"{heading}\n\n- **A change.** It does something.\n"
+    assert notes.validate(body) is None, f"{label} was rejected"
+
+
+@pytest.mark.parametrize("label,heading", HEADING_VARIANTS, ids=[c[0] for c in HEADING_VARIANTS])
+def test_normalize_rewrites_variants_to_the_canonical_heading(label, heading):
+    body = f"{heading}\n\n- **A change.** It does something.\n"
+    out = notes.normalize(body)
+    assert "## Main changes" in out, f"{label} was not canonicalised"
+    assert heading not in out.replace("## Main changes", ""), f"{label} left a stray heading"
+
+
+def test_normalize_leaves_canonical_output_untouched():
+    assert notes.normalize(GOOD) == GOOD
+
+
+def test_normalize_does_not_touch_bold_runs_inside_list_items():
+    # "- **New sidebar.** ..." is an entry, not a heading. Rewriting it would
+    # corrupt every note we produce.
+    body = "## Main changes\n\n- **Main changes.** A trap.\n"
+    assert notes.normalize(body) == body
+
+
+def test_validation_still_rejects_prose_with_no_heading_at_all():
+    assert notes.validate("Some prose with no headings at all.") is not None
+
+
+def test_validation_still_rejects_an_empty_section_when_the_heading_is_a_variant():
+    bad = "### Main Changes\n\n### Bug Fixes\n\n- **A fix.** Text.\n"
+    assert notes.validate(bad) is not None
+
+
+# ── Retry on a shape failure ──────────────────────────────────────────
+
+
+def test_draft_retries_once_when_the_first_response_is_malformed():
+    responses = ["I cannot help with that.", GOOD]
+    prompts = []
+
+    def model(prompt: str) -> str:
+        prompts.append(prompt)
+        return responses[len(prompts) - 1]
+
+    out = notes.draft(_digest(), exemplar="X", model=model)
+    assert len(prompts) == 2, "should have re-asked"
+    assert notes.FAILURE_MARKER not in out
+    assert "New sidebar" in out
+
+
+def test_the_retry_prompt_tells_the_model_what_was_wrong():
+    prompts = []
+
+    def model(prompt: str) -> str:
+        prompts.append(prompt)
+        return "I cannot help with that."
+
+    notes.draft(_digest(), exemplar="X", model=model)
+    assert len(prompts) == 2
+    assert "no recognised section heading" in prompts[1]
+    assert "no recognised section heading" not in prompts[0]
+
+
+def test_draft_falls_back_after_two_malformed_responses():
+    calls = []
+
+    def model(prompt: str) -> str:
+        calls.append(prompt)
+        return "still not a release note"
+
+    out = notes.draft(_digest(), exemplar="X", model=calls and model or model)
+    assert notes.FAILURE_MARKER in out
+
+
+def test_draft_does_not_retry_a_transport_error():
+    # A 410 from a retired endpoint will not recover, and a second call costs
+    # real money. Only shape failures are worth re-asking.
+    calls = []
+
+    def boom(prompt: str) -> str:
+        calls.append(prompt)
+        raise RuntimeError("410 github_models_retirement_brownout")
+
+    out = notes.draft(_digest(), exemplar="X", model=boom)
+    assert len(calls) == 1, "a transport error must not be retried"
+    assert notes.FAILURE_MARKER in out
+
+
+def test_build_prompt_accepts_a_retry_reason_and_omits_it_by_default():
+    plain = notes.build_prompt(_digest(), exemplar="X")
+    assert "PREVIOUS ATTEMPT" not in plain.upper()
+    retried = notes.build_prompt(_digest(), exemplar="X", retry_reason="empty section: ## Bug fixes")
+    assert "empty section: ## Bug fixes" in retried
+
+
+def test_the_retry_suffix_is_counted_against_the_prompt_byte_budget():
+    # A retry must never be the thing that pushes a prompt over the limit.
+    fat = [{"sha": f"{i:07d}", "component": "backend", "type": "fix", "scope": "x",
+            "breaking": False, "subject": f"change {i}", "pr_number": i,
+            "detail": "y" * 4000} for i in range(60)]
+    retried = notes.build_prompt(_digest(changes=fat), exemplar="X",
+                                 retry_reason="no recognised section heading")
+    assert len(retried.encode("utf-8")) <= notes.MAX_PROMPT_BYTES
+    assert "no recognised section heading" in retried
+
+
+# ── Prompt context: facts, the interface, and rollbacks ───────────────
+#
+# Everything below is context the 2.1.x backfill needed and the prompt could
+# not previously see. Each case is a note that came out wrong, or could not be
+# written at all, without it.
+
+def test_the_prompt_carries_the_release_facts_when_given():
+    prompt = notes.build_prompt(_digest(), exemplar="X", facts_block="- FACT ONE\n- FACT TWO")
+    assert "FACT ONE" in prompt and "FACT TWO" in prompt
+
+
+def test_the_prompt_omits_the_facts_section_when_there_are_none():
+    assert "RELEASE FACTS" not in notes.build_prompt(_digest(), exemplar="X")
+
+
+def test_the_prompt_says_the_interface_did_not_change_when_it_did_not():
+    d = _digest(); d["frontend_recorded"] = True; d["frontend_commits"] = 0
+    prompt = notes.build_prompt(d, exemplar="X")
+    assert "did not change" in prompt
+
+
+def test_the_prompt_refuses_to_claim_an_unchanged_interface_when_unknown():
+    # A gap must never be reported to a customer as "nothing changed" — that is
+    # the exact ambiguity the provenance work exists to remove.
+    d = _digest(); d["frontend_recorded"] = False
+    prompt = notes.build_prompt(d, exemplar="X")
+    assert "could not be determined" in prompt
+    assert "did not change" not in prompt
+
+
+def test_the_prompt_reports_how_many_interface_changes_there_are():
+    d = _digest(); d["frontend_recorded"] = True; d["frontend_commits"] = 87
+    assert "87" in notes.build_prompt(d, exemplar="X")
+
+
+@pytest.mark.parametrize("rule", [
+    "rolled back",          # a release that removes what an earlier one shipped
+    "Upgrade note",         # the closing section
+    "reported by a customer",  # provenance worth leading with
+])
+def test_the_prompt_teaches_the_rules_the_backfill_needed(rule):
+    # Whitespace-normalised: a rule must not pass or fail on where it wraps.
+    prompt = " ".join(notes.build_prompt(_digest(), exemplar="X").lower().split())
+    assert rule.lower() in prompt, f"prompt does not mention: {rule}"
+
+
+def test_draft_short_circuits_when_every_change_is_internal():
+    # v2.1.9 had 34 commits, all release tooling. Asking a model to write a
+    # customer note from that invites it to promote our machinery into a
+    # feature, which is the failure INTERNAL_SCOPES already exists to prevent.
+    called = []
+    d = _digest(changes=[
+        {"sha": "1111111", "component": "backend", "type": "feat", "scope": "release-notes",
+         "breaking": False, "subject": "backfill a span of tags", "pr_number": None,
+         "internal": True, "detail": ""},
+    ])
+    out = notes.draft(d, exemplar="X", model=lambda p: called.append(p) or GOOD)
+    assert called == [], "the model must not be called for a wholly internal release"
+    assert "no user-facing changes" in out.lower()
+    assert notes.FAILURE_MARKER not in out
+
+
+def test_a_release_with_one_shippable_change_still_calls_the_model():
+    d = _digest(changes=[
+        {"sha": "1111111", "component": "backend", "type": "feat", "scope": "release-notes",
+         "breaking": False, "subject": "internal thing", "pr_number": None,
+         "internal": True, "detail": ""},
+        {"sha": "2222222", "component": "backend", "type": "fix", "scope": "grid",
+         "breaking": False, "subject": "a real user fix", "pr_number": None,
+         "internal": False, "detail": "The grid dropped rows."},
+    ])
+    called = []
+    notes.draft(d, exemplar="X", model=lambda p: called.append(p) or GOOD)
+    assert len(called) == 1
+
+
+def test_build_prompt_falls_back_to_the_facts_the_digest_carries():
+    # draft() and build_prompt() must agree: a caller that builds a prompt
+    # directly should not silently lose the computed facts.
+    d = _digest(); d["facts"] = "- A COMPUTED FACT"
+    assert "A COMPUTED FACT" in notes.build_prompt(d, exemplar="X")
+
+
+def test_an_explicit_facts_block_still_overrides_the_digest():
+    d = _digest(); d["facts"] = "- FROM DIGEST"
+    out = notes.build_prompt(d, exemplar="X", facts_block="- EXPLICIT")
+    assert "EXPLICIT" in out and "FROM DIGEST" not in out

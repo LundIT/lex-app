@@ -702,7 +702,11 @@ class TestCluster1ae_StreamlitFloor:
             f"streamlit requirement records no minimum version: {entry!r}. The theme "
             f"needs >= {'.'.join(map(str, self.MINIMUM))} for the modern theme keys."
         )
-        floor = entry.split(">=", 1)[1].strip()
+        # Stop at the first comma: the entry may carry an UPPER bound too
+        # (`streamlit>=1.61,<1.62`), and splitting only on ">=" then leaves
+        # "1.61,<1.62" — whose second component is not an integer. The floor is
+        # the part before any further specifier.
+        floor = entry.split(">=", 1)[1].split(",")[0].strip()
         parsed = tuple(int(part) for part in floor.split(".")[:2])
         assert parsed >= self.MINIMUM, f"floor {floor} is below the required {self.MINIMUM}"
 

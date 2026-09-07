@@ -123,7 +123,8 @@ def test_enrich_prefers_the_pr_title():
 
     def fake_lookup(sha: str):
         assert sha == "705850d"
-        return (675, "fix(calc): never stamp edited_at for a calculation-owned save")
+        return (675, "fix(calc): never stamp edited_at for a calculation-owned save",
+                "## Why\n\nedited_at records the last user edit.")
 
     got = digest.enrich_with_prs(commits, lookup=fake_lookup)
     assert got[0].pr_number == 675
@@ -221,3 +222,114 @@ def test_the_digest_carries_the_flag():
     by_scope = {c["scope"]: c["internal"] for c in got["changes"]}
     assert by_scope["release-notes"] is True
     assert by_scope["auth"] is False
+
+
+# ── PR bodies as context ──────────────────────────────────────────────
+#
+# Subjects alone make the drafter invent detail. "renew the embedded Streamlit
+# token instead of prompting re-login" is nine words; its PR body explains that
+# embedded sessions previously died at the original deadline regardless. That
+# is the sentence a reader needs, and the author already wrote it.
+
+def test_the_pr_body_reaches_the_entry():
+    commits = [digest.Commit(sha="aaa", subject="fix(auth): renew the token",
+                             pr_number=678, pr_title="fix(auth): renew the token",
+                             pr_body="## Why\n\nSessions died at the original deadline.")]
+    got = digest.build_digest("v1", None, commits, [])
+    assert "died at the original deadline" in got["changes"][0]["detail"]
+
+
+def test_a_long_body_is_truncated_with_a_marker():
+    body = "x" * (digest.PR_BODY_LIMIT + 500)
+    commits = [digest.Commit(sha="a", subject="fix(auth): x", pr_number=1,
+                             pr_title="fix(auth): x", pr_body=body)]
+    got = digest.build_digest("v1", None, commits, [])
+    detail = got["changes"][0]["detail"]
+    assert len(detail) <= digest.PR_BODY_LIMIT + 40
+    assert detail.endswith("…[truncated]")
+
+
+def test_internal_changes_carry_no_body():
+    # They are omitted from the note, so their bodies are pure prompt cost.
+    commits = [digest.Commit(sha="a", subject="feat(release-notes): providers",
+                             pr_number=1, pr_title="feat(release-notes): providers",
+                             pr_body="A very long explanation of our CI tooling.")]
+    got = digest.build_digest("v1", None, commits, [])
+    assert got["changes"][0]["internal"] is True
+    assert got["changes"][0]["detail"] == ""
+
+
+def test_a_change_without_a_pr_body_has_an_empty_detail():
+    commits = [digest.Commit(sha="a", subject="fix(auth): direct push")]
+    got = digest.build_digest("v1", None, commits, [])
+    assert got["changes"][0]["detail"] == ""
+
+
+def test_html_comments_and_trailers_are_stripped_from_the_body():
+    body = ("## Why\n\nReal content.\n\n<!-- a template comment -->\n"
+            "🤖 Generated with [Claude Code](https://claude.com/claude-code)\n"
+            "Co-Authored-By: Someone <x@y.z>\n")
+    commits = [digest.Commit(sha="a", subject="fix(auth): x", pr_number=1,
+                             pr_title="fix(auth): x", pr_body=body)]
+    detail = digest.build_digest("v1", None, commits, [])["changes"][0]["detail"]
+    assert "Real content." in detail
+    assert "template comment" not in detail
+    assert "Co-Authored-By" not in detail
+    assert "Generated with" not in detail
+
+
+# ── Commit bodies as detail ───────────────────────────────────────────
+#
+# `detail` came only from a PR body, so a commit landed without a PR gave the
+# drafter nothing but its subject line. Every timezone commit in v2.1.4 is like
+# that: no PR, and the whole story — root cause, who was affected, what to run
+# — sitting in the commit body, unread. The 2.1.x backfill had to be written by
+# hand largely because of this.
+
+def test_collect_commits_reads_the_commit_body():
+    raw = (
+        "aaa1111\x1ffix(tz): adopt aware UTC\x1fRoot cause: the session zone moved.\n"
+        "Only user-typed datetimes are affected.\x1e"
+        "bbb2222\x1ffeat(cli): add lex ai-worktree\x1fA second chat needs its own checkout.\x1e"
+    )
+    got = digest.collect_commits("v1", "v2", run_log=lambda a, b: raw)
+    assert [c.sha for c in got] == ["aaa1111", "bbb2222"]
+    assert "Only user-typed datetimes are affected." in got[0].body
+    assert got[1].body.startswith("A second chat needs its own checkout.")
+
+
+def test_collect_commits_still_parses_records_with_no_body():
+    raw = "aaa1111\x1ffix(tz): adopt aware UTC\x1e"
+    got = digest.collect_commits("v1", "v2", run_log=lambda a, b: raw)
+    assert got[0].subject == "fix(tz): adopt aware UTC"
+    assert got[0].body == ""
+
+
+def test_the_git_log_invocation_asks_for_the_body():
+    seen = {}
+
+    def fake_run(argv, **kwargs):
+        seen["argv"] = argv
+        class R: stdout = ""
+        return R()
+
+    digest._run_log("v1", "v2", run=fake_run)
+    pretty = [a for a in seen["argv"] if a.startswith("--pretty=")][0]
+    assert "%b" in pretty, "the body must be requested, or detail stays empty"
+    assert "--no-merges" in seen["argv"]
+
+
+def test_a_pr_body_still_wins_over_the_commit_body():
+    # The PR body is the author writing for readers; the commit body is the
+    # author writing for reviewers. Prefer the former when both exist.
+    c = digest.Commit(sha="aaa1111", subject="fix(x): y",
+                      pr_number=1, pr_title="fix(x): y",
+                      pr_body="PR EXPLANATION", body="COMMIT EXPLANATION")
+    entry = digest._entry(c, "backend")
+    assert "PR EXPLANATION" in entry["detail"]
+
+
+def test_the_commit_body_is_used_when_there_is_no_pr_body():
+    c = digest.Commit(sha="aaa1111", subject="fix(x): y", body="COMMIT EXPLANATION")
+    entry = digest._entry(c, "backend")
+    assert "COMMIT EXPLANATION" in entry["detail"]

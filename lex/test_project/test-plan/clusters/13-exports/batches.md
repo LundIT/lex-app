@@ -49,3 +49,19 @@ writing-plan batch blocks were recorded for this cluster.
 | Status | ✅ Complete — `to_excel` raises on the aware datetimes every DateTimeField carries under USE_TZ=True, which crashed every report writing through `XLSXField` ("Excel does not support datetimes with timezones"). The boundary now renders aware values as the project display zone's wall clock (settings.TIME_ZONE) and strips tzinfo — the one place where naive is *correct*, because a spreadsheet cell is a wall-clock reading, not an instant. Reading mirrors it: parsed cells are naive local and the 3g assignment invariant restores the instant. |
 
 ---
+
+### Batch 13h — Report-file fields: callable from the value, and wide enough ✅
+
+| Property | Value |
+| --- | --- |
+| Scenario range | 13.38 – 13.45 |
+| Type | I |
+| Files covered | `lex/core/fields/XLSX_field.py` (`XLSXFieldFile`, `XLSXField.attr_class`, `XLSXField.__init__` max_length default), `lex/core/fields/PDF_field.py` (`PDFField.__init__` max_length default) |
+| Test file | `lex/test_project/tests/exports/test_13h_xlsx_field_binding.py` |
+| Test classes | `TestCluster13h_XlsxFieldBinding` (13.38 bound `self.report.create_excel_file_from_dfs(...)` writes the workbook and the name reaches the row via the framework's own `model.save()`; 13.39 the unbound `XLSXField.create_excel_file_from_dfs(self.report, ...)` still writes identically; 13.40 the value is still a `FieldFile` — the audit-log serializer dispatches on that type — and the helper carries `alters_data`; 13.41 the value survives the pickle round trip Celery dispatch performs, helper still bound) · `TestCluster13h_LongReportPath` (13.44 a 122-char nested report path round-trips byte-for-byte) · `TestCluster13h_FileFieldMaxLength` (13.42 bare `XLSXField()` is 300 wide; 13.43 an explicit `max_length` still wins; 13.45 bare `PDFField()` likewise) |
+| Fixtures | `XlsxReportProbe` in `tests/exports/models.py` — a bare `XLSXField(null=True, blank=True)` + `PDFField(...)`, declared the way downstream apps declare report columns; tables stood up through the cluster tree's `E2ETestCase.e2e_models`; writes land in a throwaway `MEDIA_ROOT` |
+| Tests landed | **8 pass / 0 fail** |
+| Coverage gain | the field-binding and column-width halves of `XLSX_field.py` / `PDF_field.py`, neither previously exercised (13g covered only the timezone normalization hook) |
+| Status | ✅ Complete — two independent traps in one declaration. (1) The helpers are written against a `FieldFile` (`create_excel_file_from_dfs` ends in `self.save(name, content, save=False)`, a FieldFile API) but lived only on the field class, so the spelling customers reach for first raised `AttributeError: 'FieldFile' object has no attribute 'create_excel_file_from_dfs'` inside a Celery worker, naming no code they wrote. `attr_class = XLSXFieldFile` binds the *same function objects*, so both spellings resolve to one implementation and the ~30 unbound call sites across the estate are untouched. (2) `max_length = 300` was dead — `FileField.__init__` setdefaults 100 and `Field.__init__` shadows the class attribute — so every bare `XLSXField()`/`PDFField()` was `varchar(100)`, over which Django's storage *silently truncates and suffixes* rather than raising. **Downstream impact:** apps get one `AlterField` per report column on their next `makemigrations`; `lex_migrate` runs it by default, so the widening lands on deploy. No lex-app model uses either field, so no migration ships in this repo. |
+
+---

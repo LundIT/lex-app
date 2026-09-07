@@ -77,6 +77,22 @@ clusters):
 | 13.11 | Unauthenticated POST | 401 / 403; no ``.xlsx`` bytes |
 | 13.12 | Per-object ``permission_export`` (non-uniform) | ``_compute_uniform_export_mask`` returns ``None``; slow per-row mask runs; each row's columns are masked according to that row's own permission result |
 
+### 13h. Report-file fields — binding and column width
+
+Not the export *endpoint* but the export *field*: the `XLSXField` / `PDFField`
+columns downstream apps declare and write from `calculate()`.
+
+| # | Scenario | What We Assert |
+|---|----------|----------------|
+| 13.38 | Bound write — `self.report.create_excel_file_from_dfs(...)` | Workbook lands in storage and the filename reaches the row via the framework's own `model.save()` (the helper saves with `save=False`) |
+| 13.39 | Unbound write — `XLSXField.create_excel_file_from_dfs(self.report, ...)` | The historical form every Lex app uses writes identically; binding the value must not cost the class form |
+| 13.40 | Value identity | Still an `isinstance` `FieldFile` (the audit-log serializer dispatches on it), specifically `XLSXFieldFile`, and the helper carries Django's `alters_data` marker |
+| 13.41 | Pickle round trip | Survives the serialization Celery dispatch performs — `calc_and_save` receives model instances over the broker, so a class that does not pickle fails only in the worker |
+| 13.42 | Bare `XLSXField()` width | `max_length` is 300, the width the class advertises — not Django's `FileField` default of 100 |
+| 13.43 | Explicit `max_length` | The caller's value wins; the default stays a default |
+| 13.44 | 122-char nested report path | Round-trips byte-for-byte; over the column width Django's storage silently truncates and suffixes rather than raising |
+| 13.45 | Bare `PDFField()` width | Same 300 default — PDF reports build the same nested paths |
+
 **What is explicitly NOT tested here:**
 
 - ❌ **Excel formatting cosmetics** (column widths, cell colours,

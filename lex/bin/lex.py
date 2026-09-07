@@ -4,6 +4,7 @@ import io
 import logging
 import os
 import platform
+import secrets
 import subprocess
 import sys
 import threading
@@ -35,8 +36,11 @@ from lex.tools.setup_with_ai import (
 # knows. Three copies of this list sat at six modes while the server shipped
 # nine, which is how `lex ai-verify --mode brief` came to fail with "not one
 # of" rather than verifying anything. Derived, like every other roster.
+#
+# Only setup-with-ai still needs it. The `ai-*` commands build their choices
+# from `payload.MODE_TO_PACKAGE` directly, in the package that defines it --
+# see _LexGroup below.
 _MODE_CHOICES = list(SUPPORTED_MCP_MODES)
-_VERIFY_MODE_CHOICES = ["auto", *_MODE_CHOICES, "all"]
 
 
 def _require_lex_mcp(module_name: str):
@@ -107,7 +111,93 @@ os.environ.setdefault("DJANGO_SETTINGS_MODULE", "lex_app.settings")
 os.environ.setdefault("PROJECT_ROOT", PROJECT_ROOT_DIR.as_posix())
 os.environ.setdefault("LEX_APP_PACKAGE_ROOT", LEX_APP_PACKAGE_ROOT)
 
-lex = click.Group(help="lex-app Command Line Interface")
+class _LexGroup(click.Group):
+    """A click group that lets lex-mcp-local define its own commands.
+
+    Everything under `lex ai-*` is implemented in lex-mcp-local, and its
+    options are declared there too. lex-app used to restate every flag in a
+    ``@lex.command`` block here, which put the surface of a command in a
+    different repository from the function it calls -- on lex-app's release
+    cadence, which the customer drives. A new AI command was therefore
+    unreachable until a customer took a whole framework upgrade, even though
+    `lex ai-update` had already installed the code implementing it.
+
+    So an `ai-*` name this file has never heard of is not an error: it is
+    resolved against the installed package, which owns the flags, the help
+    text and the exit code. Adding a command is a lex-mcp-local release.
+
+    `setup-with-ai` and `ai-update` are the exceptions, and keep their own
+    blocks below. Both must work *before* lex-mcp-local exists on disk, and
+    `ai-update` is the recovery path when the installed one is too old to have
+    the registry -- so it must not be resolved through the registry.
+    """
+
+    #: Names resolved by delegation rather than registration. Both separators:
+    #: `ai_verify` and `ai_issue_report` are what the older docs and the support
+    #: macros tell people to type, and each used to need a second hidden click
+    #: command here duplicating the whole option block.
+    _DELEGATED_PREFIXES = ("ai-", "ai_")
+
+    def get_command(self, ctx, cmd_name):
+        command = super().get_command(ctx, cmd_name)
+        if command is not None:
+            return command
+        if cmd_name.startswith(self._DELEGATED_PREFIXES):
+            return self._delegated_command(cmd_name)
+        return None
+
+    def list_commands(self, ctx):
+        names = set(super().list_commands(ctx))
+        try:
+            names.update(_require_lex_mcp("cli").command_names())
+        except click.ClickException:
+            # Not installed, or too old to have the registry. `setup-with-ai`
+            # and `ai-update` are static and still listed, which are the two a
+            # user needs before anything else here can work.
+            pass
+        return sorted(names)
+
+    @staticmethod
+    def _delegated_command(cmd_name):
+        # The summary comes from the registry rather than from a docstring
+        # here: `lex --help` has to describe a command this file does not
+        # define, and listing must not import the module that does -- one of
+        # them is the 1800-line dashboard.
+        try:
+            summary = _require_lex_mcp("cli").short_help(cmd_name)
+        except click.ClickException:
+            summary = ""
+
+        # help_option_names=[] is load-bearing: without it click answers
+        # `lex ai-verify --help` here, from a command that declares no options,
+        # instead of letting the package that owns them render its own help.
+        @click.command(
+            name=cmd_name,
+            short_help=summary,
+            context_settings=dict(
+                ignore_unknown_options=True,
+                allow_extra_args=True,
+                help_option_names=[],
+            ),
+            add_help_option=False,
+        )
+        @click.pass_context
+        def _delegate(ctx):
+            lex_mcp_cli = _require_lex_mcp("cli")
+            try:
+                exit_code = lex_mcp_cli.dispatch(cmd_name, ctx.args)
+            except lex_mcp_cli.UnknownCommand:
+                raise click.ClickException(
+                    f"`lex {cmd_name}` is not a command this lex-mcp-local "
+                    f"provides. Run `lex ai-update` to upgrade it, or "
+                    f"`lex --help` for the ones it does."
+                ) from None
+            ctx.exit(exit_code)
+
+        return _delegate
+
+
+lex = _LexGroup(help="lex-app Command Line Interface")
 
 # ---------- Project root and configs (no Django) ----------
 
@@ -389,6 +479,99 @@ def _safe_theme_flags(streamlit_args, tokens=None):
         )
         return []
 
+def _warn_if_sessions_are_not_durable() -> None:
+    """Report session-durability problems on the main thread.
+
+    ``lex/proxy.py`` is the authority on these rules, but it is imported *in the
+    uvicorn worker thread*, where a RuntimeError kills only the proxy and leaves
+    Streamlit serving and unreachable -- which reads as "the dashboard is
+    broken" rather than "fix your environment". Checking the same environment
+    here turns the ones worth refusing over into readable CLI errors.
+    Deliberately duplicated; if you change a rule, change it in both places.
+
+    What is worth refusing over is a narrow set: configurations that are
+    genuinely *broken*, not merely degraded. A replica set with no shared token
+    store returns 401s to half its traffic; a ``SameSite=None`` cookie without
+    ``Secure`` is discarded by browsers so no session is ever established.
+    Those refuse. A per-process session key only means sessions do not survive
+    a restart -- so it warns, because a guard that stops a dashboard starting
+    is worse than the fragility it guards against.
+    """
+    public_url = (os.getenv("STREAMLIT_URL") or os.getenv("BASE_URL") or "").rstrip("/")
+    # Lowercased, because proxy.py derives the same fact through
+    # ``httpx.URL(...).scheme``, which normalises case. Comparing
+    # case-sensitively let ``HTTPS://host`` disagree between the two.
+    is_https = public_url.lower().startswith("https://")
+
+    has_secret = bool(
+        os.getenv("SESSION_SECRET")
+        or os.getenv("SESSION_KEY")
+        or os.getenv("SESSION_SECRET_KEY")
+    )
+    # Mirrors proxy.py's ``_resolve_session_secret``: a non-default
+    # DJANGO_SECRET_KEY is a perfectly good source -- terraform generates it and
+    # keeps it in state, so it is stable across restarts and identical on every
+    # replica -- and every deployed instance has one. Its presence means
+    # sessions ARE durable, with nothing further to set.
+    published_default = "pjlulvaa77lteno-_y6!oxb%63xqiaw4%n%1or&77a!x9@nkd+"
+    django_secret = (os.getenv("DJANGO_SECRET_KEY") or "").strip()
+    has_derivable = bool(django_secret) and django_secret != published_default
+
+    has_redis = bool(os.getenv("TOKEN_REDIS_URL") or os.getenv("REDIS_URL"))
+
+    # --- refuse: genuinely broken -------------------------------------
+    samesite = (os.getenv("SESSION_SAMESITE") or "").strip().lower()
+    if samesite and samesite not in {"lax", "strict", "none"}:
+        raise click.ClickException(
+            f"SESSION_SAMESITE must be one of lax|strict|none, got {samesite!r}."
+        )
+
+    https_only_raw = (os.getenv("SESSION_HTTPS_ONLY") or "").strip().lower()
+    https_only = (
+        https_only_raw in ("1", "true", "yes", "y", "on") if https_only_raw else is_https
+    )
+    effective_samesite = samesite or ("none" if is_https else "lax")
+    if effective_samesite == "none" and not https_only:
+        raise click.ClickException(
+            "SESSION_SAMESITE=none requires Secure cookies, but SESSION_HTTPS_ONLY is false. "
+            "Browsers discard such cookies, so no session would ever be established. Serve "
+            "the proxy over HTTPS, or set SESSION_SAMESITE=lax and keep the frontend and "
+            "Streamlit on one registrable domain."
+        )
+
+    replicas = os.getenv("LEX_PROXY_REPLICAS", "1") or "1"
+    try:
+        replicated = int(replicas.strip()) > 1
+    except ValueError:
+        # Matches proxy.py's `_env_int`, which warns and falls back to 1 rather
+        # than raising. The two must agree or this pre-check stops being one.
+        click.echo(
+            f"Warning: LEX_PROXY_REPLICAS={replicas!r} is not an integer; assuming 1.",
+            err=True,
+        )
+        replicated = False
+
+    if replicated and not has_redis:
+        raise click.ClickException(
+            f"LEX_PROXY_REPLICAS={replicas} but no TOKEN_REDIS_URL/REDIS_URL is set. "
+            "The token store would be process-local, so a request routed to another "
+            "replica would find no session and return 401."
+        )
+
+    # --- warn: degraded, but it starts --------------------------------
+    if not has_secret and not has_derivable:
+        click.echo(
+            "Warning: no SESSION_SECRET and no non-default DJANGO_SECRET_KEY; dashboard "
+            "sessions will not survive a restart.",
+            err=True,
+        )
+    if not has_redis:
+        click.echo(
+            "Warning: no TOKEN_REDIS_URL/REDIS_URL set; the token store is in-memory "
+            "and will not survive a restart.",
+            err=True,
+        )
+
 
 @lex.command(name="streamlit", context_settings=dict(ignore_unknown_options=True, allow_extra_args=True))
 @click.pass_context
@@ -446,30 +629,81 @@ def streamlit(ctx):
         if not os.path.isabs(streamlit_app_path):
             streamlit_args[file_index] = f"{LEX_APP_PACKAGE_ROOT}/{streamlit_app_path}"
 
+    # Ports: the caller's --browser.serverPort / --server.port win, then the
+    # environment, then the defaults. Merging lex-app-v2 brought LEX_PROXY_PORT
+    # in as the proxy's port and hardcoded Streamlit's at 8080; keeping the CLI
+    # override on top means `lex streamlit run app.py --server.port 9000` is
+    # still usable on a machine where 8080 is taken, which is why the resolver
+    # exists.
     public_port, streamlit_port, port_flags, upstream_url = _resolve_streamlit_ports(
         streamlit_args
     )
+    proxy_port = os.environ.setdefault("LEX_PROXY_PORT", public_port)
+    disconnected_session_ttl = os.environ.setdefault(
+        "LEX_STREAMLIT_DISCONNECTED_SESSION_TTL", "600"
+    )
+
     # The proxy forwards to Streamlit, so it has to follow --server.port. An
     # explicitly-set UPSTREAM still wins (setdefault), which is how a deployment
     # points the proxy at a non-local Streamlit.
     os.environ.setdefault("UPSTREAM", upstream_url)
 
+    # Shared secret for the proxy's /auth/token endpoint, which is how the
+    # dashboard renews the access token it was handed at connect time. Minted
+    # here, before either half starts, so both read the same value out of the
+    # environment they share -- the proxy is imported as top-level ``proxy`` in
+    # the uvicorn thread while Streamlit imports ``lex.streamlit_app``, so they
+    # are separate module objects and cannot share a Python-level constant.
+    os.environ.setdefault("LEX_INTERNAL_AUTH_SECRET", secrets.token_urlsafe(32))
+
+    _warn_if_sessions_are_not_durable()
+
+    # `uvicorn.run()` would install signal handlers, which only the main thread
+    # may do; modern uvicorn no-ops that off-thread, but it also gives us no
+    # handle on the server, so there is no way to ask it to stop. Building the
+    # Server here keeps that handle, which is what makes the shutdown below
+    # possible: setting `should_exit` lets `serve()` return normally, so its
+    # lifespan shutdown runs -- closing the pooled upstream client and sending
+    # every open WebSocket a real close frame instead of having the daemon
+    # thread killed from under them.
+    proxy_server = uvicorn.Server(
+        uvicorn.Config("proxy:app", host="0.0.0.0", port=int(proxy_port), loop="asyncio")
+    )
+
     def run_uvicorn():
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        uvicorn.run("proxy:app", host="0.0.0.0", port=int(public_port), loop="asyncio")
+        loop.run_until_complete(proxy_server.serve())
 
     t = threading.Thread(target=run_uvicorn, daemon=True)
     t.start()
 
-    # Theme flags, then only the port flags the caller did NOT supply. Any
-    # --theme.* the caller passed is already excluded by _safe_theme_flags, so
-    # both kinds of customer override survive.
-    streamlit_main(
-        streamlit_args
-        + _safe_theme_flags(streamlit_args)
-        + port_flags
-    )
+    try:
+        # Theme flags, then only the port flags the caller did NOT supply. Any
+        # --theme.* the caller passed is already excluded by _safe_theme_flags,
+        # so both kinds of customer override survive.
+        streamlit_main(
+            streamlit_args
+            + _safe_theme_flags(streamlit_args)
+            + port_flags
+            + [
+                # Streamlit keeps a disconnected session -- st.session_state,
+                # uploaded files -- for this long, and resumes it if the same
+                # client reconnects carrying its session id. The default is
+                # 120s, which is shorter than a Keycloak round trip that has to
+                # show a login form, so a re-auth came back to an evicted
+                # session and landed the user on the first page with their work
+                # gone. Defence in depth: with renewal working the document
+                # should never reload, but a blip still drops the socket.
+                "--server.disconnectedSessionTTL", str(disconnected_session_ttl),
+            ]
+        )
+    finally:
+        # Streamlit has stopped, so let the proxy finish properly rather than
+        # dying with the process. Bounded: a hung shutdown must not stop the
+        # command exiting.
+        proxy_server.should_exit = True
+        t.join(timeout=float(os.getenv("LEX_PROXY_SHUTDOWN_TIMEOUT", "5")))
 
 
 @lex.command(name="pytest", context_settings=dict(ignore_unknown_options=True, allow_extra_args=True))
@@ -1204,321 +1438,6 @@ def ai_update(project_root):
         )
 
 
-@lex.command(name="ai-faq", context_settings=dict(ignore_unknown_options=True, allow_extra_args=True))
-def ai_faq():
-    """Open the LEX AI FAQ page in your browser."""
-    ai_faq_module = _require_lex_mcp("ai_faq")
-    ai_faq_module.launch_ai_faq(reporter=click.echo)
-
-
-def _run_ai_verify_command(
-    project_root, mode, quiet, silent, align_mcp_mode, environments=(), strict=False
-):
-    """Verify (and silently restore) the LEX AI asset directories.
-
-    Walks the canonical ``.github`` directory shipped by the active MCP mode's
-    package (``lex_mcp_local`` for forward, ``lex_mcp_reverse`` for backward)
-    and the ``docs`` directory shipped by ``lex``, then rewrites any file under
-    the project root that is missing or whose contents have drifted. Existing
-    user-only files are left untouched, except mode-managed paths under
-    ``.github`` (agents/instructions/prompts), which are mirrored exactly to
-    prevent stale cross-mode AI assets.
-    """
-    ai_verify_module = _require_lex_mcp("ai_verify")
-
-    try:
-        result = ai_verify_module.run_ai_verify(
-            project_root=project_root,
-            mode=mode,
-            quiet=quiet,
-            silent=silent,
-            align_mcp_mode=align_mcp_mode,
-            reporter=click.echo,
-            environments=list(environments) or None,
-        )
-    except SetupWithAIError as exc:
-        raise click.ClickException(str(exc)) from exc
-
-    # Soft failures -- an unknown environment key, a payload sync that threw --
-    # are reported as [warn] lines and otherwise exit 0, because the MCP
-    # pre-flight calls this on every tool call and must not abort a run over
-    # one. That default is wrong for CI, where a typo in -e reads as success.
-    if strict and not result.ok:
-        raise click.ClickException(
-            "Verification reported problems (see the warnings above)."
-        )
-
-
-@lex.command(name="ai-verify", context_settings=dict(ignore_unknown_options=True, allow_extra_args=True))
-@click.option("-p", "--project-root", help="Project root (default: execution dir)")
-@click.option(
-    "--mode",
-    "mode",
-    type=click.Choice(_VERIFY_MODE_CHOICES, case_sensitive=False),
-    default="auto",
-    show_default=True,
-    help=(
-        "Which MCP mode's assets to verify. 'auto' (default) detects the active "
-        "mode from --mode > override file > project .env > mcp.json > "
-        "process env > forward. 'all' verifies every mode's assets."
-    ),
-)
-@click.option(
-    "--quiet",
-    is_flag=True,
-    help="Suppress per-file output; only print a summary line (or nothing on success).",
-)
-@click.option(
-    "--silent",
-    is_flag=True,
-    help="Print nothing on success. Implies --quiet. Intended for use as a fast pre-flight "
-         "guard at the start of every MCP tool call.",
-)
-@click.option(
-    "--align-mcp-mode/--no-align-mcp-mode",
-    default=None,
-    help=(
-        "Treat the project .env LEX_MCP_MODE as the source of truth and "
-        "invoke the equivalent of the MCP `switch_to_mode` tool when the "
-        "running MCP server / mcp.json disagree. Enabled by default for "
-        "interactive runs; disabled under --silent to avoid restarting the "
-        "server in the middle of an MCP tool call."
-    ),
-)
-@click.option(
-    "-e",
-    "--environment",
-    "environments",
-    multiple=True,
-    help=(
-        "Agentic environment(s) whose assets should be verified "
-        "(pycharm-copilot, vscode-copilot, copilot-cli, cursor, claude-code, "
-        "codex, windsurf, or 'all'). Repeatable. Defaults to the project's "
-        "LEX_AI_ENVIRONMENTS value."
-    ),
-)
-@click.option(
-    "--strict",
-    is_flag=True,
-    default=False,
-    help=(
-        "Exit non-zero when verification reports a problem it recovered from "
-        "or warned about, instead of always exiting 0. For CI; the MCP "
-        "pre-flight deliberately does not use it."
-    ),
-)
-def ai_verify(project_root, mode, quiet, silent, align_mcp_mode, environments, strict):
-    _run_ai_verify_command(
-        project_root, mode, quiet, silent, align_mcp_mode, environments, strict
-    )
-
-
-@lex.command(name="ai_verify", hidden=True, context_settings=dict(ignore_unknown_options=True, allow_extra_args=True))
-@click.option("-p", "--project-root", help="Project root (default: execution dir)")
-@click.option(
-    "--mode",
-    "mode",
-    type=click.Choice(_VERIFY_MODE_CHOICES, case_sensitive=False),
-    default="auto",
-    show_default=True,
-    help=(
-        "Which MCP mode's assets to verify. 'auto' (default) detects the active "
-        "mode from --mode > override file > project .env > mcp.json > "
-        "process env > forward. 'all' verifies every mode's assets."
-    ),
-)
-@click.option(
-    "--quiet",
-    is_flag=True,
-    help="Suppress per-file output; only print a summary line (or nothing on success).",
-)
-@click.option(
-    "--silent",
-    is_flag=True,
-    help="Print nothing on success. Implies --quiet. Intended for use as a fast pre-flight "
-         "guard at the start of every MCP tool call.",
-)
-@click.option(
-    "--align-mcp-mode/--no-align-mcp-mode",
-    default=None,
-    help=(
-        "Treat the project .env LEX_MCP_MODE as the source of truth and "
-        "invoke the equivalent of the MCP `switch_to_mode` tool when the "
-        "running MCP server / mcp.json disagree. Enabled by default for "
-        "interactive runs; disabled under --silent to avoid restarting the "
-        "server in the middle of an MCP tool call."
-    ),
-)
-@click.option(
-    "-e",
-    "--environment",
-    "environments",
-    multiple=True,
-    help=(
-        "Agentic environment(s) whose assets should be verified "
-        "(pycharm-copilot, vscode-copilot, copilot-cli, cursor, claude-code, "
-        "codex, windsurf, or 'all'). Repeatable. Defaults to the project's "
-        "LEX_AI_ENVIRONMENTS value."
-    ),
-)
-@click.option(
-    "--strict",
-    is_flag=True,
-    default=False,
-    help=(
-        "Exit non-zero when verification reports a problem it recovered from "
-        "or warned about, instead of always exiting 0. For CI; the MCP "
-        "pre-flight deliberately does not use it."
-    ),
-)
-def ai_verify_alias(project_root, mode, quiet, silent, align_mcp_mode, environments, strict):
-    _run_ai_verify_command(
-        project_root, mode, quiet, silent, align_mcp_mode, environments, strict
-    )
-
-
-@lex.command(name="ai-dashboard", context_settings=dict(ignore_unknown_options=True, allow_extra_args=True))
-@click.option("-p", "--project-root", help="Project root (default: execution dir)")
-def ai_dashboard(project_root):
-    """Open the LEX AI Dashboard in your browser.
-
-    Displays and lets you edit the MCP server mode, GitHub token, Remote MCP
-    API key, and other configuration. Changes are written to .env and mcp.json.
-    Press Ctrl+C to stop the dashboard server.
-    """
-    # The directory given (or the cwd) IS the project, exactly as
-    # setup-with-ai and ai-verify treat it. This used to walk up to a git
-    # toplevel or marker file, which meant update delivered the agent
-    # payload somewhere setup had never written -- a project without its
-    # own marker got .github and docs copied into its parent.
-    root = resolve_llm_working_directory(project_root)
-    ai_dashboard_module = _require_lex_mcp("ai_dashboard")
-    try:
-        ai_dashboard_module.launch_ai_dashboard(
-            project_root=root,
-            reporter=click.echo,
-        )
-    except SetupWithAIError as exc:
-        raise click.ClickException(str(exc)) from exc
-
-
-def _ai_issue_report_options(command):
-    """Apply the shared option set to both spellings of the command."""
-    for decorate in reversed(
-        (
-            click.option(
-                "-p", "--project-root", help="Project root (default: execution dir)"
-            ),
-            click.option(
-                "-o",
-                "--output",
-                type=click.Path(path_type=Path, dir_okay=False, writable=True),
-                help=(
-                    "Output zip path (default: "
-                    "<project>/.lex-ai-reports/ai_issue_report_<timestamp>.zip)"
-                ),
-            ),
-            click.option(
-                "--artifact-mode",
-                type=click.Choice(["auto", "off", "strict"], case_sensitive=False),
-                default="auto",
-                show_default=True,
-                help=(
-                    "Raw artifact capture mode: auto (best-effort), off, "
-                    "strict (require at least one file)."
-                ),
-            ),
-            click.option(
-                "--yes",
-                is_flag=True,
-                help="Skip the confirmation prompt about raw secret inclusion.",
-            ),
-        )
-    ):
-        command = decorate(command)
-    return command
-
-
-# Hyphenated is canonical, matching every sibling (ai-dashboard, ai-faq,
-# ai-update, ai-verify). This command was registered under the underscore
-# alone, so `lex ai-issue-report` -- the spelling the naming convention implies
-# -- failed with "No such command". The underscore survives as a hidden alias
-# because it is what the existing docs and support macros tell people to type.
-# Click has no `aliases=` argument (verified against 8.4), so a second hidden
-# command is the mechanism, exactly as ai-verify/ai_verify already do it.
-@lex.command(
-    name="ai-issue-report",
-    context_settings=dict(ignore_unknown_options=True, allow_extra_args=True),
-)
-@_ai_issue_report_options
-def ai_issue_report(project_root, output, artifact_mode, yes):
-    """Generate a raw AI issue report bundle for support triage.
-
-    Captures Copilot and MCP-related artifacts as raw files without parsing so
-    no details are dropped during triage.
-    """
-    _run_ai_issue_report(project_root, output, artifact_mode, yes)
-
-
-@lex.command(
-    name="ai_issue_report",
-    hidden=True,
-    context_settings=dict(ignore_unknown_options=True, allow_extra_args=True),
-)
-@_ai_issue_report_options
-def ai_issue_report_alias(project_root, output, artifact_mode, yes):
-    """Deprecated spelling of ``ai-issue-report``; kept working."""
-    _run_ai_issue_report(project_root, output, artifact_mode, yes)
-
-
-def _run_ai_issue_report(project_root, output, artifact_mode, yes):
-    # The directory given (or the cwd) IS the project, exactly as
-    # setup-with-ai and ai-verify treat it. This used to walk up to a git
-    # toplevel or marker file, which meant update delivered the agent
-    # payload somewhere setup had never written -- a project without its
-    # own marker got .github and docs copied into its parent.
-    root = resolve_llm_working_directory(project_root)
-
-    if not yes:
-        # The old wording said the bundle "can include raw secrets". It did,
-        # and it was uploaded to the ticketing system. Credentials are masked
-        # now, so say what is actually still in there -- an inaccurate warning
-        # is one people learn to click past.
-        click.echo(
-            "This bundle includes MCP configs, logs, and private Copilot "
-            "conversation artifacts, and is uploaded to LEX support."
-        )
-        click.echo("Credential values are masked before anything is written.")
-        click.confirm("Continue and generate the issue report?", abort=True)
-
-    ai_issue_report_module = _require_lex_mcp("ai_issue_report")
-
-    try:
-        result = ai_issue_report_module.create_ai_issue_report(
-            project_root=root,
-            output=output,
-            artifact_mode=str(artifact_mode).lower(),
-        )
-    except (RuntimeError, ValueError) as exc:
-        raise click.ClickException(str(exc)) from exc
-
-    click.echo(f"AI issue report written: {result.archive_path}")
-    click.echo(f"Captured files: {result.copied_files}")
-    # getattr, not attribute access: lex-app must never assume a lex-mcp-local
-    # newer than whatever the customer has installed. A plain access here turns
-    # an older package into an AttributeError traceback at the end of a report
-    # that was otherwise generated fine.
-    masked = getattr(result, "values_masked", None)
-    if masked is not None:
-        click.echo(f"Credential values masked: {masked}")
-    for skipped in getattr(result, "skipped_oversize", ()):
-        click.echo(f"  [skip] too large to scan, left out: {skipped}")
-    if result.missing_sources:
-        click.echo(f"Missing sources: {len(result.missing_sources)}")
-    if result.collection_errors:
-        click.echo(f"Collection errors: {len(result.collection_errors)}")
-    if result.ticket_url:
-        click.echo(f"Quackback ticket: {result.ticket_url}")
 
 
 def _collect_setup_with_ai_credentials(
@@ -1577,23 +1496,32 @@ def _collect_setup_with_ai_credentials(
 # command enumeration.  For these, _bootstrap_django() is skipped so that
 # django.setup() (and every AppConfig.ready()) only fires once — inside
 # the actual server process (uvicorn / celery worker / streamlit).
+#: ai-update is named here rather than left to the `ai-` prefix rule below.
+#: It is lex-app's own command and must stay skipped whatever happens to that
+#: rule -- it is the recovery path when the installed lex-mcp-local is too old
+#: for anything else here to work.
 _SKIP_BOOTSTRAP_COMMANDS = frozenset(
-    # Both spellings of ai-issue-report are listed for the reader's benefit;
-    # _should_skip_django_bootstrap also normalises hyphens and underscores, so
-    # either would match on its own.
-    {"start", "celery", "celery-workers", "flower", "pytest", "pytest-groups", "setup", "setup-with-ai", "ai-update", "ai-faq", "ai-verify", "ai-dashboard", "ai-issue-report", "ai_issue_report"}
+    {"start", "celery", "celery-workers", "flower", "pytest", "pytest-groups", "setup", "setup-with-ai", "ai-update"}
 )
 
 
 def _should_skip_django_bootstrap(command_name: str | None) -> bool:
     """Return True when *command_name* is handled directly by Click.
 
-    Accept both hyphen and underscore spellings for the AI commands so the
-    pre-dispatch gate does not accidentally trigger Django bootstrap before
-    Click has a chance to route to the dedicated handler.
+    Every `ai-*` name skips, including ones this file has never heard of. This
+    gate reads ``sys.argv[1]`` *before* click runs, so it cannot ask the group
+    whether the name resolves -- and a command lex-mcp-local defines would
+    otherwise fall through to ``django.setup()`` and fail in a directory that
+    is not a Lex app yet, which is the situation most AI commands exist to fix.
+
+    Both separators, because `ai_verify` and `ai_issue_report` are still
+    spellings people type.
     """
     if command_name is None:
         return False
+
+    if command_name.startswith(("ai-", "ai_")):
+        return True
 
     normalized_names = {
         command_name,

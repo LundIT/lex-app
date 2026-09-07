@@ -26,6 +26,10 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 # ASCII unit separator: cannot appear in a commit subject, unlike any
 # punctuation a human might type.
 _FIELD_SEP = "\x1f"
+# Bodies are multi-line, so records need a terminator of their own. A record
+# with only two fields still parses, which keeps injected two-field fixtures
+# working and makes a body genuinely optional rather than required.
+_RECORD_SEP = "\x1e"
 
 _SUBJECT_RE = re.compile(
     r"^(?P<type>" + "|".join(CONVENTIONAL_TYPES) + r")"
@@ -69,8 +73,10 @@ class Commit:
 
     sha: str
     subject: str
+    body: str = ""
     pr_number: int | None = None
     pr_title: str | None = None
+    pr_body: str | None = None
 
 
 # Commits that are real work but say nothing about the shipped product.
@@ -96,6 +102,40 @@ def is_internal(type_: str, scope: str | None) -> bool:
     return (scope or "").strip().lower() in INTERNAL_SCOPES
 
 
+# How much of a PR body to carry per change. Bodies in this repository are
+# essays — #675 explains the user-visible symptom ("I triggered a calculation
+# and edited_at was updated") that its nine-word subject cannot. That sentence
+# is what a release note needs, and the author already wrote it.
+PR_BODY_LIMIT = 4000
+
+_TRAILER_MARKERS = (
+    "Co-Authored-By:",
+    "🤖 Generated with",
+    "Signed-off-by:",
+)
+
+
+def summarise_body(body: str | None) -> str:
+    """Trim a PR body down to the part worth putting in a prompt."""
+    if not body:
+        return ""
+
+    text = re.sub(r"<!--.*?-->", "", body, flags=re.DOTALL)
+
+    lines: list[str] = []
+    for line in text.splitlines():
+        if any(line.lstrip().startswith(m) for m in _TRAILER_MARKERS):
+            continue
+        lines.append(line)
+
+    cleaned = "\n".join(lines).strip()
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+
+    if len(cleaned) > PR_BODY_LIMIT:
+        cleaned = cleaned[:PR_BODY_LIMIT].rstrip() + "…[truncated]"
+    return cleaned
+
+
 def is_noise(subject: str) -> bool:
     """True for commits that must never reach a changelog."""
     subject = (subject or "").strip()
@@ -114,6 +154,7 @@ def _entry(commit: Commit, component: str) -> dict:
     # conform. Enrichment is what makes the input usable at that number.
     subject = commit.pr_title or commit.subject
     parsed = parse_subject(subject)
+    internal = is_internal(parsed.type, parsed.scope)
     return {
         "sha": commit.sha,
         "component": component,
@@ -122,7 +163,10 @@ def _entry(commit: Commit, component: str) -> dict:
         "breaking": parsed.breaking,
         "subject": parsed.subject,
         "pr_number": commit.pr_number,
-        "internal": is_internal(parsed.type, parsed.scope),
+        "internal": internal,
+        # Internal changes are omitted from the note, so their bodies would be
+        # pure prompt cost. They keep their line in the changelog either way.
+        "detail": "" if internal else summarise_body(commit.pr_body or commit.body),
     }
 
 
@@ -159,16 +203,24 @@ def build_digest(
     return {"tag": tag, "previous_tag": previous_tag, "changes": changes}
 
 
-def _run_log(from_ref: str | None, to_ref: str) -> str:
+def _run_log(from_ref: str | None, to_ref: str, *, run=subprocess.run) -> str:
     spec = f"{from_ref}..{to_ref}" if from_ref else to_ref
-    result = subprocess.run(
-        ["git", "log", "--no-merges", f"--pretty=%h{_FIELD_SEP}%s", spec],
+    result = run(
+        ["git", "log", "--no-merges",
+         f"--pretty=%h{_FIELD_SEP}%s{_FIELD_SEP}%b{_RECORD_SEP}", spec],
         cwd=REPO_ROOT,
         check=True,
         capture_output=True,
         text=True,
     )
     return result.stdout.strip()
+
+
+def _records(raw: str) -> list[str]:
+    """Split git output into records, tolerating the older line-per-commit form."""
+    if _RECORD_SEP in raw:
+        return [r.strip("\n") for r in raw.split(_RECORD_SEP) if r.strip()]
+    return [line for line in raw.splitlines() if line.strip()]
 
 
 def collect_commits(
@@ -180,11 +232,13 @@ def collect_commits(
     """Read `from_ref..to_ref` into Commit records."""
     raw = run_log(from_ref, to_ref)
     commits: list[Commit] = []
-    for line in raw.splitlines():
+    for line in _records(raw):
         if _FIELD_SEP not in line:
             continue
-        sha, subject = line.split(_FIELD_SEP, 1)
-        commits.append(Commit(sha=sha.strip(), subject=subject.strip()))
+        parts = line.split(_FIELD_SEP)
+        sha, subject = parts[0], parts[1] if len(parts) > 1 else ""
+        body = parts[2] if len(parts) > 2 else ""
+        commits.append(Commit(sha=sha.strip(), subject=subject.strip(), body=body.strip()))
     return commits
 
 
@@ -198,11 +252,11 @@ def collect_commits(
 # commit conformance depends on.
 _PR_JQ = (
     "[.[] | select(.merged_at != null)] + . "
-    "| .[0] | select(. != null) | [.number, .title] | @json"
+    "| .[0] | select(. != null) | [.number, .title, (.body // \"\")] | @json"
 )
 
 
-def _lookup_pr(sha: str) -> tuple[int, str] | None:
+def _lookup_pr(sha: str) -> tuple[int, str, str] | None:
     """The PR a commit belongs to, via the GitHub API. Merged ones win."""
     result = subprocess.run(
         ["gh", "api", f"repos/{{owner}}/{{repo}}/commits/{sha}/pulls",
@@ -213,14 +267,14 @@ def _lookup_pr(sha: str) -> tuple[int, str] | None:
     )
     if result.returncode != 0 or not result.stdout.strip():
         return None
-    number, title = json.loads(result.stdout.strip())
-    return int(number), title
+    number, title, body = json.loads(result.stdout.strip())
+    return int(number), title, body
 
 
 def enrich_with_prs(
     commits: list[Commit],
     *,
-    lookup: Callable[[str], tuple[int, str] | None] = _lookup_pr,
+    lookup: Callable[[str], tuple[int, str, str] | None] = _lookup_pr,
 ) -> list[Commit]:
     """Attach PR number and title where a commit came through a PR.
 
@@ -243,9 +297,12 @@ def enrich_with_prs(
             enriched.append(commit)
         else:
             hits += 1
-            number, title = found
+            number, title, body = found
             enriched.append(
-                Commit(sha=commit.sha, subject=commit.subject, pr_number=number, pr_title=title)
+                Commit(
+                    sha=commit.sha, subject=commit.subject,
+                    pr_number=number, pr_title=title, pr_body=body,
+                )
             )
     if commits:
         print(f"PR enrichment: {hits}/{len(commits)} commits matched a pull request.",

@@ -1,0 +1,191 @@
+---
+date: 2026-09-04
+clusters: [1]
+tests_added: 49
+suite_tally: "1ad: 40 pass / 0 fail, 31 subtests; init cluster: 353 pass / 13 skip / 119 subtests on a clean run (BUG-029 makes it intermittent)"
+---
+
+# Batch 1ad — Streamlit's asset bundle served ungated, and session durability
+
+Fourth batch on this auth path, and the one that explains the other three.
+[Batch 1z](../../clusters/01-init/batches.md) made expiry graceful,
+[1aa](../../clusters/01-init/batches.md) let the embedded caller renew,
+[1ac](../../clusters/01-init/batches.md) stopped the session expiring at all — and this
+one addresses why the same auth path was also producing a 401 flood, a four-times-heavier
+cold start, and `TypeError` dialogs in front of customers.
+
+## What made it one bug rather than three
+
+Three reports arrived separately: an idle dashboard resetting to the first page, Streamlit
+taking forever to start "because it is getting all the JS libraries", and TypeErrors
+appearing from nowhere. They are one causal chain, and the arithmetic is the whole
+explanation. Streamlit 1.61 ships **365** code-split JS chunks and names **107** of them in
+eager `modulepreload` tags; the proxy authenticated every one through a single catch-all
+route whose deny ran *before* it looked at the path.
+
+So one credential-less moment is a hundred simultaneous 401s. A **lazily** imported chunk
+that 401s reaches the browser as `TypeError: Failed to fetch dynamically imported module`,
+because Vite's dynamic `import()` has no other vocabulary for an HTTP error — which is why
+the screenshots name `DownloadButton` and `DataFrame`, both lazy chunks. And the proxy read
+the *decoded* upstream body, so it had to strip `Content-Encoding` to stay honest, silently
+disabling compression for everything Streamlit serves.
+
+## What the measurements changed
+
+Two numbers redirected the work. The eager preload set is **1.77 MB** plaintext against
+**0.42 MB** gzipped — a 4.17x saving that had simply been switched off, and the reason the
+fix is "keep the encoded bytes" rather than "compress harder". And JWT validation, the
+intuitive suspect for the slow start, is **0.045 ms per request** — 16 ms across all 365
+chunks. It is recorded in the batch note as explicitly *not* a cause, so the next person
+does not optimise it.
+
+The real event-loop hazard was next door: `_get_jwks_sync` fetched with a **sync** client on
+the loop (up to 10s of total stall, on boot and every hourly TTL lapse, which could drop a
+live dashboard's WebSocket) *and* returned `None` on failure while holding valid keys — so
+one Keycloak blip rejected every token in the cluster.
+
+## The half that was not a performance problem
+
+`SESSION_SECRET` and `TOKEN_STORE` both defaulted to per-process values. A random secret is
+not a weak secret, it is a *different* secret in every process: every restart and every
+extra replica silently logs all users out, which is indistinguishable from the expiry bug
+1ac had just fixed. Those configurations now refuse to boot, because degrading into the
+symptom is what made them hard to find.
+
+## Notes for whoever reads this next
+
+- Scenarios 1.254, 1.255 and 1.271 pass against the pre-fix tree **by design**. They assert
+  what must not change — the authenticated boundary, the WebSocket deny, and that
+  legitimate configurations still start — and would be first to break if the public
+  allowlist ever widened. The other 27 fail pre-fix.
+- 1.257 found a latent bug while being written: the first stub was a buffered
+  `httpx.Response(content=...)`, which cannot exercise the encoding passthrough because
+  `.content` is decoded. That mismatch existed in `_iter_upstream` too, for any already-read
+  response. A stub that cannot take the production path proves nothing about it.
+- **BUG-029** was recorded, not fixed: `test_1i_rebase_incident_datetimes.py` is flaky
+  (4 failed / 6 failed / 6 passed over three consecutive runs of that file alone) with a
+  missing `lex_app_historicalsimpleitem` table. It reproduces with this batch's file
+  excluded and predates it. Left unmarked deliberately — an xfail would hide a flake that
+  currently stops cluster 1 gating a release.
+
+## The review found ten more defects, all in the new code
+
+Worth writing down, because the shape repeats. Three independent finder angles over
+`lex/proxy.py`, `lex/bin/lex.py` and the React shell turned up ten further bugs — **every one
+of them in the fix**, not in what it replaced. Scenarios 1.277–1.286 pin them; the
+[batch entry](../../clusters/01-init/batches.md) lists each.
+
+Four would have reproduced one of the three original symptoms by a different route:
+
+- the `auth_token` strip redirect set only the session cookie, so it handed over *fewer*
+  credentials than the response it replaced — and the deployments where that matters (Safari
+  ITP, third-party-cookie blocking) are exactly the ones the change targets;
+- the `/static` mount ignored `--server.baseUrlPath`, which would drop every asset back into
+  the authenticated catch-all and restore the 401 storm, with the bundle present so nothing
+  warned;
+- a mid-body upstream failure became a truncated `200`, i.e. a silent `SyntaxError` in a Vite
+  chunk — the same class of error, now unreportable;
+- and in the shell, `authError` was left ungated where `isAuthLoading` had been gated, so a
+  transient renewal failure unmounted a live dashboard every 15 s.
+
+Two lessons for the next pass:
+
+1. **A test double that cannot take the production path proves nothing about it.** 1.278 (an
+   empty chunk on a 304) was reachable *only* through the buffered branch every stub takes;
+   real `aiter_raw()` yields zero chunks. 1.257 had the same problem in the first pass, and the
+   fix there was to make the stub stream.
+2. **Mirrored logic drifts immediately.** `_warn_if_sessions_are_not_durable` was written to
+   duplicate proxy.py's import-time rules deliberately, and shipped covering two of five — with
+   a case-sensitive https test where proxy.py's normalises. 1.285 and 1.286 exist to keep the
+   two in step, because the docstring saying "keep these in sync" did not.
+
+## The guard that was worse than the bug
+
+Scenario 1.270 shipped asserting that the proxy **refuses to boot** without `SESSION_SECRET` on an
+https deployment, and it immediately stopped a running instance from starting. That is the most
+useful thing this batch produced, because the mistake is a general one.
+
+The reasoning — *degrading into the symptom is what made the original bug hard to find* — is true of
+a **broken** configuration and false of a **degraded** one. A replica set with no shared token store
+returns 401s to half its traffic: refuse. A `SameSite=None` cookie without `Secure` is discarded by
+browsers, so no session is ever established: refuse. A per-process session key means sessions do not
+survive a restart — and `lex streamlit` runs a single process, so it works perfectly until the next
+redeploy, at which point users are logged out once. Refusing there trades an occasional re-login for
+a dashboard that will not start.
+
+The fix was the same shape as the `DOMAIN_HOSTED` correction one section up, which is why it is worth
+naming as a pattern: **when a fix wants a new required variable, look for an existing one that
+already carries the property.** Three times in this batch the answer was already in the environment.
+
+- `DOMAIN_HOSTED` for the adopt allowlist — mandatory in every deployment, already means "the frontend".
+- `DJANGO_SECRET_KEY` for the session key — terraform `random_password` in state, so stable across
+  restarts and identical on every replica.
+
+Both derived, not reused verbatim: the session key is an HMAC of the Django secret under a fixed
+label, so a leak of one does not hand over the other. And the published `settings.py` fallback is
+excluded from derivation — sharing *that* would give every lex-app instance the same cookie-signing
+key, which is worse than a random per-process value rather than better.
+
+## What production found that review did not
+
+Three rounds of adversarial review found ten bugs in this change. Production then found an
+eleventh that none of the angles had reached, and it is instructive about *why*:
+
+```
+httpx.RemoteProtocolError: Server disconnected without sending a response.
+```
+
+exactly **5 seconds** after the previous upstream request — uvicorn's default keep-alive timeout.
+Streamlit closes the socket at that point, the pool hands the dead connection to the next request,
+and it fails before a byte is exchanged. `RemoteProtocolError` is neither `ConnectError` nor
+`TimeoutException`, so it escaped both handlers as *"Exception in ASGI application"*: a dropped
+request rather than a status. Since `/media/...` is proxied, the user-visible form was
+*"Protokoll downloaden geht nicht"* — a document download that failed for no stated reason.
+
+The reason review missed it is worth naming. Every angle asked *is this code correct?* The bug is
+not in the code; it is in an **interaction with a timeout in another process** that only exists once
+connections are reused. The per-request client this replaced could not have hit it. So a review
+question that would have caught it is not "is the pooling correct" but **"what did the old code get
+for free that the new code now has to earn?"** — the removed-behaviour angle, applied to a
+non-functional property rather than a guard or a validation.
+
+Scenarios 1.293–1.295, all three failing against the deployed tree. 1.293 drives a real socket
+server that answers and then closes, because a mock cannot reproduce a keep-alive race.
+
+## The log we added found the last one
+
+The access log from the previous section paid for itself on its first production log, and the
+result is the clearest evidence in this whole batch:
+
+**The customer's session was clean.** No 4xx on any asset — the only `/static/` line in the entire
+log was a deliberate probe for a file that does not exist. Upload 204, media 200, no
+`RemoteProtocolError`, no ASGI exception. The asset path and the connection path are both fixed
+and observably working in production.
+
+One thing remained:
+
+```
+Exception in thread token_refresher:
+  File "lex/streamlit_app.py", line 298, in _refresher_should_stop
+streamlit.runtime.scriptrunner_utils.exceptions.StopException
+```
+
+`StopException` and `RerunException` derive from **`BaseException`**, so the refresher's
+`except Exception` could not catch them and the thread died. A dead one is replaced only on the
+*next script run* — so an interaction that killed it followed by idleness left nothing renewing
+the token, and the dashboard expired on its own lifetime. A rerun *followed by idleness*: that is
+why it looked intermittent, and it is the original report exactly.
+
+Three things worth carrying forward:
+
+1. **The diagnostic was the fix.** Three review rounds and two production logs did not find this;
+   the log line that did exist only because 1.296–1.299 added it. When an investigation stalls on
+   "I cannot see what happened", building the ability to see is the highest-value work available.
+2. **`except Exception` is not a catch-all**, and in a framework that uses exceptions for control
+   flow it is a trap. `BaseException` subclasses are how Streamlit stops a script, how `asyncio`
+   cancels a task, and how Python exits — all of which can cross a thread boundary that a
+   long-running worker sits on.
+3. **`defined == collected` is worth asserting.** A duplicated class block in this very file had
+   been shadowing scenarios 1.277–1.286 — 63 methods defined, 53 collected — so ten scenarios
+   were silently not running, including several that gate the security boundary. Nothing failed;
+   they simply were not there.

@@ -1,7 +1,7 @@
 cluster: 13
 slug: exports
 title: Export Endpoint
-max_scenario: 37
+max_scenario: 45
 letters:
   a:
     title: Legacy (non-AG) export path
@@ -77,3 +77,21 @@ letters:
       as settings.TIME_ZONE wall-clock and strips tzinfo -- data columns, object columns, (multi)index
       and column headers. Round-trip proven — a cell read back from the file re-assigned to a LexModel
       DateTimeField restores the exact original instant via the 3g invariant.
+  h:
+    title: Report-file fields are callable from the value, and wide enough for report paths
+    scenarios: 13.38-13.45
+    status: complete
+    tests:
+      pass: 8
+      skip: 0
+      xfail: 0
+    note: Two independent traps in the same declaration. XLSXField's helpers are written against a
+      FieldFile (create_excel_file_from_dfs ends in self.save(..., save=False)) but lived only on the
+      field class, so self.report.create_excel_file_from_dfs(...) raised AttributeError and only the
+      unbound XLSXField.create_excel_file_from_dfs(self.report, ...) worked. attr_class = XLSXFieldFile
+      binds the same function objects, so both spellings resolve to one implementation. Separately
+      XLSXField.max_length = 300 was dead -- FileField.__init__ setdefaults 100 and Field.__init__
+      shadows the class attribute -- so every bare XLSXField()/PDFField() was varchar(100), over which
+      Django's storage silently truncates and suffixes the filename. Both fields now setdefault their
+      advertised width. Downstream apps get one AlterField per report column on their next
+      makemigrations.
