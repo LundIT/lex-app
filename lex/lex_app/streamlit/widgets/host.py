@@ -43,11 +43,12 @@ costs a runtime.
 from __future__ import annotations
 
 import urllib.parse
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from lex.lex_app.streamlit._widget_host_component import render_widget_host
 from lex.streamlit_theme import THEME_STORAGE_KEY
 from lex.lex_app.streamlit.embed import _resolve_base_url
+from lex.lex_app.streamlit.widgets.keys import widget_key
 from lex.lex_app.streamlit.widgets.spec import (
     PK,
     build_manifest,
@@ -84,7 +85,29 @@ class WidgetPage:
     def __init__(self) -> None:
         self._specs: List[Dict[str, Any]] = []
         self._result: Optional[dict] = None
-        self._auto_id = 0
+        # Counts how many times an identical (kind, model, pk) has been added,
+        # so genuine duplicates still get distinct ids.
+        self._seen: Dict[str, int] = {}
+
+    def _next_id(self, explicit: Optional[str], kind: str, model: str, pk: PK) -> str:
+        """An id that survives a widget above it being hidden.
+
+        Ids used to be positional -- ``w1``, ``w2``, ... from a running counter --
+        which meant a widget rendered behind an ``if`` renumbered every widget
+        after it. Status envelopes are routed back BY id, so on the rerun where
+        that condition flipped, an envelope reached the wrong widget.
+
+        Deriving from what the widget is about instead means hiding one widget
+        leaves its siblings' ids untouched.
+        """
+        if explicit:
+            return explicit
+        base = f"{kind}_{model}_{pk}"
+        count = self._seen.get(base, 0)
+        self._seen[base] = count + 1
+        # First one keeps the clean name; only a real duplicate is suffixed, so
+        # the common case stays readable in an event payload.
+        return base if count == 0 else f"{base}__{count}"
 
     def calculation(
         self,
@@ -127,8 +150,7 @@ class WidgetPage:
         Streamlit reruns top-to-bottom on each event -- the same contract every
         Streamlit input widget has.
         """
-        self._auto_id += 1
-        widget_id = id or f"w{self._auto_id}"
+        widget_id = self._next_id(id, "calculation", model, pk)
         self._specs.append(
             calculation_spec(
                 widget_id,
@@ -180,10 +202,9 @@ class WidgetPage:
         Returns ``None``: a log emits no status. Use ``calculation(...)`` for
         that.
         """
-        self._auto_id += 1
         self._specs.append(
             calculation_log_spec(
-                id or f"w{self._auto_id}",
+                self._next_id(id, "calculation_log", model, pk),
                 model,
                 pk,
                 height=height,
@@ -207,10 +228,9 @@ class WidgetPage:
         shows how a finished run was structured. Prefer ``calculation_log`` for
         watching; reach for this when navigating a completed run.
         """
-        self._auto_id += 1
         self._specs.append(
             calculation_log_spec(
-                id or f"w{self._auto_id}",
+                self._next_id(id, "calculation_log_tree", model, pk),
                 model,
                 pk,
                 height=height,
@@ -231,10 +251,24 @@ class WidgetPage:
 class _LexWidgets:
     """Context manager returned by :func:`lex_widgets`."""
 
-    def __init__(self, *, key: Optional[str], min_height: int) -> None:  # noqa: D107
+    def __init__(
+        self,
+        *,
+        key: Optional[str],
+        min_height: int,
+        key_parts: Tuple[Any, ...] = (),
+        key_depth: int = 0,
+    ) -> None:  # noqa: D107
         self._key = key
         self._min_height = min_height
         self._page = WidgetPage()
+        # Derived once, here, rather than in __enter__: the key must be the SAME
+        # string when __enter__ reads session_state and when __exit__ renders,
+        # and deriving it twice from the call stack would read two different
+        # frames (this constructor's caller, then Streamlit's).
+        self._component_key = widget_key(
+            "lex_widgets", key, parts=key_parts, extra_depth=key_depth + 1
+        )
 
     def __enter__(self) -> WidgetPage:
         import streamlit as st
@@ -244,7 +278,10 @@ class _LexWidgets:
         # own. An earlier version kept a private key and wrote it in __exit__,
         # which meant the value was always one rerun behind what the component
         # already knew -- so the first Calculate never surfaced in Python.
-        self._component_key = self._key or "lex_widget_host"
+        #
+        # The key used to be the literal "lex_widget_host", which meant TWO
+        # blocks on one page read and wrote the same slot: the second block saw
+        # the first block's events. It is now derived from the call site.
         self._page._result = st.session_state.get(self._component_key)
         return self._page
 
@@ -365,7 +402,88 @@ def lex_widgets(*, key: Optional[str] = None, min_height: int = 48) -> _LexWidge
         with rest:
             st.write("... your own content, beside the button ...")
     """
-    return _LexWidgets(key=key, min_height=min_height)
+    return _LexWidgets(key=key, min_height=min_height, key_depth=1)
+
+
+# ---------------------------------------------------------------------------
+# One widget, one call -- the shape `lex_view` already taught
+# ---------------------------------------------------------------------------
+#
+# `lex_view(path)` embeds one lex-app route. These embed one lex-app control,
+# and read the same way at the call site, so the family explains itself: a flat
+# `lex_*` function embeds exactly one thing, and `lex_widgets()` embeds several
+# into one frame.
+#
+# Each is the block form entered and exited in a single call -- NOT a second
+# rendering path. There is one manifest builder, one host, one place a bug can
+# live. A parallel single-widget implementation is how two entry points start
+# disagreeing about what a widget is.
+#
+# The cost is real and worth knowing: each of these is its own iframe, so its
+# own React runtime. Right for a control or two, wrong for ten -- reach for
+# `lex_widgets()` once a page has several, and it pays for the block.
+
+
+def _solo(method: str, model: str, pk: PK, key: Optional[str], min_height: int, kwargs):
+    """Render one widget in its own host and return whatever the method returns.
+
+    ``model`` and ``pk`` are folded into the host key so a loop over one source
+    line -- ``for pk in pks: lex_calculation("navcalc", pk=pk)`` -- yields one
+    key per iteration instead of one key reused three times.
+    """
+    block = _LexWidgets(
+        key=key, min_height=min_height, key_parts=(method, model, pk), key_depth=2
+    )
+    page = block.__enter__()
+    result = getattr(page, method)(model, pk, **kwargs)
+    block.__exit__(None, None, None)
+    return result
+
+
+def lex_calculation(
+    model: str,
+    pk: PK,
+    *,
+    key: Optional[str] = None,
+    min_height: int = 48,
+    **kwargs: Any,
+) -> Optional[dict]:
+    """One calculation control -- the Calculate button, its status, its log.
+
+    Takes everything :meth:`WidgetPage.calculation` takes::
+
+        lex_calculation("navcalc", pk=1, variant="action", show_log_button=False)
+
+    Returns the latest status envelope when ``on_status=True``, else ``None``.
+    """
+    return _solo("calculation", model, pk, key, min_height, kwargs)
+
+
+def lex_calculation_log(
+    model: str,
+    pk: PK,
+    *,
+    key: Optional[str] = None,
+    min_height: int = 48,
+    **kwargs: Any,
+) -> None:
+    """The calculation log as a LIVE stream. See :meth:`WidgetPage.calculation_log`."""
+    return _solo("calculation_log", model, pk, key, min_height, kwargs)
+
+
+def lex_calculation_log_tree(
+    model: str,
+    pk: PK,
+    *,
+    key: Optional[str] = None,
+    min_height: int = 48,
+    **kwargs: Any,
+) -> None:
+    """The log's execution TREE for a finished run.
+
+    See :meth:`WidgetPage.calculation_log_tree`.
+    """
+    return _solo("calculation_log_tree", model, pk, key, min_height, kwargs)
 
 
 __all__ = ["lex_widgets", "WidgetPage"]

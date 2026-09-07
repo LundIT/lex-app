@@ -56,37 +56,109 @@ _DEFAULT_SCROLLING: bool = True
 # ---------------------------------------------------------------------------
 
 
+class FlowError(ValueError):
+    """A flow rule that could never fire."""
+
+
+#: Target meaning "do not navigate -- stay on this form and clear it".
+#: The React side matches the literal string; this constant exists so a typo is
+#: a NameError at author time rather than a redirect that silently never happens.
+STAY = "self"
+
+#: The operations the React app actually resolves a redirect for.
+#: ``delete`` is deliberately absent: the app EMITS ``lex:record_deleted`` but
+#: has no delete-redirect resolver, so a ``"<resource>/delete"`` rule would be
+#: accepted, serialised, shipped, and then ignored. Rejecting it here turns a
+#: silent no-op into a message at the call that wrote it.
+_OPERATIONS = ("create", "update")
+
+
 class Flow(dict):
+    """Where to go after a record is created or updated, per resource.
+
+    Each key is ``"<resource>/<operation>"`` and each value is the target path.
+    Both forms build the same thing::
+
+        Flow({"investor/create": "/cashflow/{id}/edit"})
+
+        Flow().after_create("investor", "/cashflow/{id}/edit")
+
+    Targets may contain ``{id}`` -- the id of the record just saved -- and
+    ``{resource}``, for which ``{model}`` is an accepted alias. A target of
+    :data:`STAY` keeps the user on the form instead of navigating.
+
+    **Rules are validated when written, not when they fail to fire.** A flow
+    rule that never matches produces no error and no redirect; it simply does
+    nothing, in a browser, later. Every way of building a ``Flow`` -- the
+    constructor, the builders, ``update()``, plain item assignment -- goes
+    through the same check, so a typo cannot reach the URL by taking a
+    different door in.
     """
-    A dict subclass for defining multi-step redirect workflows declaratively.
 
-    Each key is ``"<resource>/<operation>"`` (operation: ``create`` or ``update``),
-    and each value is the target path (supports ``{resource}`` and ``{id}`` tokens).
+    def __init__(self, mapping=None, **kwargs):  # noqa: D107
+        super().__init__()
+        if mapping:
+            for key, target in dict(mapping).items():
+                self[key] = target
+        for key, target in kwargs.items():
+            self[key] = target
 
-    Can be built via the constructor or the fluent builder methods::
+    # -- validation ---------------------------------------------------------
 
-        # Dict-style (passed directly to flow= param)
-        Flow({
-            "investor/create": "/cashflow/{id}/edit",
-            "cashflow/update": "/investor",
-        })
+    @staticmethod
+    def _validate(key: object, target: object) -> None:
+        if not isinstance(key, str) or "/" not in key:
+            raise FlowError(
+                f"flow key {key!r} must be '<resource>/<operation>', "
+                f"e.g. 'investor/create'"
+            )
+        resource, _, operation = key.partition("/")
+        if not resource:
+            raise FlowError(f"flow key {key!r} has no resource before the '/'")
+        if operation not in _OPERATIONS:
+            if operation == "delete":
+                raise FlowError(
+                    "flow key {!r}: there is no delete redirect. The app emits a "
+                    "delete event (lex_view(on_delete=True)) but never navigates "
+                    "on one, so this rule would be silently ignored.".format(key)
+                )
+            raise FlowError(
+                f"flow key {key!r}: unknown operation {operation!r}; "
+                f"expected one of {', '.join(_OPERATIONS)}"
+            )
+        if not isinstance(target, str) or not target:
+            raise FlowError(f"flow target for {key!r} must be a non-empty string")
 
-        # Fluent builder style
-        (Flow()
-            .after_create("investor", "/cashflow/{id}/edit")
-            .after_update("cashflow", "/investor")
-        )
-    """
+    def __setitem__(self, key, target) -> None:  # noqa: D105
+        self._validate(key, target)
+        super().__setitem__(key, target)
+
+    def setdefault(self, key, target=None):  # noqa: D102
+        self._validate(key, target)
+        return super().setdefault(key, target)
+
+    def update(self, other=None, **kwargs) -> None:  # noqa: D102
+        for key, target in dict(other or {}, **kwargs).items():
+            self[key] = target
+
+    # -- builders -----------------------------------------------------------
 
     def after_create(self, resource: str, target: str) -> "Flow":
-        """Add a redirect rule: after creating a record of ``resource``, go to ``target``."""
+        """After creating a record of ``resource``, go to ``target``."""
         self[f"{resource}/create"] = target
         return self
 
     def after_update(self, resource: str, target: str) -> "Flow":
-        """Add a redirect rule: after updating a record of ``resource``, go to ``target``."""
+        """After updating a record of ``resource``, go to ``target``."""
         self[f"{resource}/update"] = target
         return self
+
+    def after_save(self, resource: str, target: str) -> "Flow":
+        """After creating **or** updating a record of ``resource``, go to ``target``.
+
+        The common case, and writing both rules by hand is where they drift.
+        """
+        return self.after_create(resource, target).after_update(resource, target)
 
 
 def _resolve_base_url() -> str:
