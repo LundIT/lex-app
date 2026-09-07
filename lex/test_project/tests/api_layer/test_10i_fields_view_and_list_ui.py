@@ -37,12 +37,29 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from django.db.models import (
+    CASCADE,
     AutoField,
+    BigAutoField,
+    BigIntegerField,
     BooleanField,
+    CharField,
     DateField,
+    DateTimeField,
+    DecimalField,
+    DurationField,
+    EmailField,
+    FileField,
     FloatField,
     ForeignKey,
+    ImageField,
     IntegerField,
+    ManyToManyField,
+    OneToOneField,
+    PositiveIntegerField,
+    SlugField,
+    SmallIntegerField,
+    TextField,
+    UUIDField,
 )
 from django.test import SimpleTestCase
 from rest_framework import serializers as drf_serializers
@@ -56,6 +73,7 @@ from lex.api.views.model_info.Fields import (
     Fields,
     create_field_info,
     create_list_ui_info,
+    resolve_type_name,
 )
 
 import pytest
@@ -495,6 +513,139 @@ class TestCluster10i_TypeMaps(SimpleTestCase):
         self.assertEqual(DRF_FIELD2TYPE_NAME[drf_serializers.JSONField], "json")
         self.assertEqual(DEFAULT_TYPE_NAME, "string")
 
+
+# --------------------------------------------------------------------- #
+# Type resolution — BUG-F-004 (numeric half) and the exact-match trap
+# that caused it. Scenarios 10.72 – 10.76.
+# --------------------------------------------------------------------- #
+
+
+class TestCluster10i_TypeResolution(SimpleTestCase):
+    """`resolve_type_name` — the lookup the whole form/filter layer keys off."""
+
+    # 10.72 -----------------------------------------------------------
+    def test_10_72_decimal_field_reports_float_not_string(self):
+        """A Django `DecimalField` must report `float` (BUG-F-004, numeric half).
+
+        `DecimalField` was absent from `DJANGO_FIELD2TYPE_NAME`, so every
+        money / quantity column fell through to `DEFAULT_TYPE_NAME` and the
+        grid handed it the TEXT filter — substring matching on a number,
+        with no gt / lt / inRange. The frontend was ready the whole time:
+        its `getFilterForField` already maps `float` to
+        `agNumberColumnFilter`. Note the asymmetry this closes —
+        `DRF_FIELD2TYPE_NAME` mapped `DecimalField` correctly, so a
+        serializer-declared decimal worked while a model one did not.
+        """
+        self.assertEqual(DJANGO_FIELD2TYPE_NAME[DecimalField], "float")
+        self.assertEqual(resolve_type_name(DecimalField), "float")
+
+        nav = DecimalField(
+            name="nav", verbose_name="nav", max_digits=12, decimal_places=2
+        )
+        nav.editable, nav.null, nav.primary_key = True, False, False
+        self.assertEqual(
+            create_field_info(nav)["type"],
+            "float",
+            "A DecimalField reaching the FE as 'string' is what put the "
+            "text filter on every numeric column.",
+        )
+
+    # 10.73 -----------------------------------------------------------
+    def test_10_73_subclass_walk_keeps_the_most_derived_match(self):
+        """Specificity guard: `DateTimeField` must not collapse to `date`.
+
+        The lookup walks `__mro__`, and Django's own hierarchy holds two
+        traps: `DateTimeField` subclasses `DateField`, and `ImageField`
+        subclasses `FileField`. A subclass check in the wrong order would
+        report a datetime column as a date — a picker that silently drops
+        the time — so pin both directions rather than trusting the walk.
+        """
+        self.assertEqual(resolve_type_name(DateTimeField), "date_time")
+        self.assertEqual(resolve_type_name(DateField), "date")
+        self.assertEqual(resolve_type_name(ImageField), "image_file")
+        self.assertEqual(resolve_type_name(FileField), "file")
+
+    # 10.74 -----------------------------------------------------------
+    def test_10_74_unregistered_subclasses_resolve_to_their_base_type(self):
+        """An unmapped subclass inherits its base's type instead of `string`.
+
+        This is the half that prevents the NEXT BUG-F-004: Django ships
+        numeric subclasses that were never registered, and projects define
+        their own. Every one of them used to report `string` and get the
+        text filter. `BigAutoField` is the one that mattered most in
+        practice — it is the default primary key on modern Django, so
+        every model's `id` column was affected.
+        """
+        for field_class, expected in (
+            (BigAutoField, "int"),
+            (BigIntegerField, "int"),
+            (PositiveIntegerField, "int"),
+            (SmallIntegerField, "int"),
+        ):
+            with self.subTest(field=field_class.__name__):
+                self.assertEqual(resolve_type_name(field_class), expected)
+
+        class ProjectDecimalField(DecimalField):
+            """Stand-in for a customer's own field subclass."""
+
+        self.assertEqual(resolve_type_name(ProjectDecimalField), "float")
+
+    # 10.75 -----------------------------------------------------------
+    def test_10_75_one_to_one_resolves_to_foreign_key_with_a_target(self):
+        """`OneToOneField` gets the FK type AND the `target` that renders it.
+
+        Type resolution and `additional_info` are two lookups on the same
+        field and they have to agree. Once `OneToOneField` resolves to
+        `foreign_key` through its base, an exact `type(field) == ForeignKey`
+        check on the target branch hands the frontend an FK column with no
+        model to resolve against — strictly worse than the `string` it
+        reported before, because the FK renderer has nothing to read.
+        """
+        self.assertEqual(resolve_type_name(OneToOneField), "foreign_key")
+
+        o2o = OneToOneField(
+            "probe.Target", on_delete=CASCADE, name="owner", verbose_name="owner"
+        )
+        o2o.editable, o2o.null, o2o.primary_key = True, True, False
+        # A real class, not a namespace: `OneToOneField.get_default` runs
+        # `isinstance(default, self.remote_field.model)`, which needs a type.
+        class _Target:
+            _meta = SimpleNamespace(model_name="target", pk=SimpleNamespace(name="id"))
+
+        o2o.remote_field = SimpleNamespace(model=_Target, limit_choices_to={})
+
+        info = create_field_info(o2o)
+        self.assertEqual(info["type"], "foreign_key")
+        self.assertEqual(
+            info["target"],
+            "target",
+            "An FK-typed column without a target renders nothing.",
+        )
+
+    # 10.76 -----------------------------------------------------------
+    def test_10_76_unrelated_types_still_fall_through_to_string(self):
+        """The walk must not over-capture: unmapped roots stay `string`.
+
+        `ManyToManyField` is the one to watch. It is NOT a `ForeignKey`
+        subclass, so neither the type map nor the target branch may claim
+        it — if either did, a m2m column would render as a single FK.
+        """
+        self.assertFalse(
+            issubclass(ManyToManyField, ForeignKey),
+            "If Django ever changes this, the FK target branch needs "
+            "revisiting — it is an isinstance check.",
+        )
+        for field_class in (
+            CharField,
+            TextField,
+            EmailField,
+            SlugField,
+            UUIDField,
+            DurationField,
+            ManyToManyField,
+        ):
+            with self.subTest(field=field_class.__name__):
+                self.assertEqual(resolve_type_name(field_class), DEFAULT_TYPE_NAME)
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()

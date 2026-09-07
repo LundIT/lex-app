@@ -2,6 +2,7 @@ from django.db.models import (
     ForeignKey,
     IntegerField,
     FloatField,
+    DecimalField,
     BooleanField,
     DateField,
     DateTimeField,
@@ -28,6 +29,7 @@ DJANGO_FIELD2TYPE_NAME = {
     ForeignKey: "foreign_key",
     IntegerField: "int",
     FloatField: "float",
+    DecimalField: "float",
     BooleanField: "boolean",
     DateField: "date",
     DateTimeField: "date_time",
@@ -37,6 +39,19 @@ DJANGO_FIELD2TYPE_NAME = {
     ImageField: "image_file",
     JSONField: "json",
 }
+
+
+def resolve_type_name(ftype):
+    """Map a Django field class to its API type name, subclasses included."""
+    # Walk the MRO instead of testing isinstance: it keeps the most derived
+    # match, which matters because DateTimeField subclasses DateField and
+    # ImageField subclasses FileField. An exact hit is still the first hit.
+    for klass in ftype.__mro__:
+        type_name = DJANGO_FIELD2TYPE_NAME.get(klass)
+        if type_name is not None:
+            return type_name
+    return DEFAULT_TYPE_NAME
+
 
 # DRF Field → API type (for serializer-only fields)
 DRF_FIELD2TYPE_NAME = {
@@ -67,14 +82,17 @@ def create_field_info(field):
     ftype = type(field)
 
     additional_info = {}
-    if ftype == ForeignKey:
+    # isinstance, not ==: OneToOneField subclasses ForeignKey and resolves to
+    # "foreign_key", so it needs the target the FK renderer reads. An exact
+    # check gave it the type without the target, which renders nothing.
+    if isinstance(field, ForeignKey):
         additional_info['target'] = field.remote_field.model._meta.model_name
         additional_info['limit_choices_to'] = field.remote_field.limit_choices_to
 
     info = {
         "name": field.name,
         "readable_name": field.verbose_name.title(),
-        "type": DJANGO_FIELD2TYPE_NAME.get(ftype, DEFAULT_TYPE_NAME),
+        "type": resolve_type_name(ftype),
         "editable": field.editable and not isinstance(field, AutoField),
         "required": not (field.null or default is not None),
         "default_value": default,
