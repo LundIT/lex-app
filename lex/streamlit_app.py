@@ -12,6 +12,7 @@ import streamlit as st
 from streamlit.runtime.scriptrunner import add_script_run_ctx, get_script_run_ctx
 
 from lex.lex_app.streamlit.eager_frames import eager_frames_js
+from lex.lex_app.streamlit.quackback import quackback_launcher_js
 from lex.lex_app.streamlit.sidebar import (
     HIDE_SIDEBAR_CSS,
     embedded_in_lex_app,
@@ -634,6 +635,20 @@ def render_theme_follower() -> None:
     # parameter above, which is exact and flash-free but only once the frontend
     # that sends it has shipped -- framing is knowable without anyone's help.
     body = hide_sidebar_when_framed_js() + body
+
+    # The feedback launcher, and it decides for itself whether to appear: a
+    # framed Streamlit page must not stack a second one over lex-app's, and only
+    # the browser knows whether this page is framed. Unconditional here for the
+    # same reason the two scripts above are -- whose chrome this page sits
+    # inside is not a theme question.
+    try:
+        from lex.lex_app.streamlit.embed import _resolve_base_url
+
+        body = quackback_launcher_js(_resolve_base_url()) + body
+    except Exception:
+        # A missing launcher is a missing feedback button; a raise here would
+        # take the whole page down with it.
+        logger.warning("Could not mount the feedback launcher", exc_info=True)
     if follow:
         body = theme_follower_html(_url_embed_theme(), debug=debug) + body
 
