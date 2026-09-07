@@ -133,12 +133,134 @@ def render_pdf_bytes(full_html: str) -> bytes:
         return result.getvalue()
 
 
+# Cap on how many rows one combined document may pull in. Set high enough that
+# no real run reaches it; when it IS reached the document says so rather than
+# ending mid-run, because a silently truncated log reads exactly like a log of a
+# calculation that stopped early.
+MAX_SUBTREE_NODES = 500
+
+_TRUTHY = {"1", "true", "yes", "on"}
+
+
+def _wants_descendants(raw: "str | None") -> bool:
+    return str(raw or "").strip().lower() in _TRUTHY
+
+
+def _node_title(log: CalculationLog, index: int) -> str:
+    """A heading a person can navigate by.
+
+    ``str(log)`` is deliberately NOT used: for model-backed rows it returns
+    ``CalculationLog object (49)``, which is Django's default and tells a reader
+    nothing. Section rows carry a real title in ``heading``; model-backed rows
+    are named after the object they logged.
+    """
+    if log.heading:
+        return log.heading
+    calculatable = log.calculatable_object
+    if calculatable is not None:
+        return str(calculatable)
+    return f"Section {index}"
+
+
+def collect_subtree(root: CalculationLog, cap: int = MAX_SUBTREE_NODES):
+    """The root, then every descendant, in pre-order (document order).
+
+    Gathers breadth-first so the number of queries is bounded by DEPTH rather
+    than by node count, then re-orders depth-first so the document reads the way
+    the log tree displays it.
+
+    ``parent_log`` is a self-referential FK, so a cycle is representable in the
+    table even though nothing should write one; the visited set is what stops a
+    bad row from hanging the request instead of returning a PDF.
+
+    Returns ``(ordered, truncated)`` where ordered is a list of
+    ``(log, depth)`` pairs.
+    """
+    by_parent: "dict[int, list[CalculationLog]]" = {}
+    seen = {root.pk}
+    frontier = [root.pk]
+    truncated = False
+
+    while frontier and not truncated:
+        children = list(
+            CalculationLog.objects.filter(parent_log_id__in=frontier).order_by("id")
+        )
+        frontier = []
+        for child in children:
+            if child.pk in seen:
+                continue
+            if len(seen) >= cap:
+                truncated = True
+                break
+            seen.add(child.pk)
+            by_parent.setdefault(child.parent_log_id, []).append(child)
+            frontier.append(child.pk)
+
+    ordered = []
+    stack = [(root, 0)]
+    while stack:
+        node, depth = stack.pop()
+        ordered.append((node, depth))
+        # Reversed so the explicit stack yields children left-to-right.
+        for child in reversed(by_parent.get(node.pk, [])):
+            stack.append((child, depth + 1))
+
+    return ordered, truncated
+
+
+def build_subtree_markdown(ordered, truncated: bool) -> str:
+    """One markdown document from a log and its descendants.
+
+    The root contributes its body with no synthetic heading -- it IS the
+    document, and its log usually opens with a title of its own. Every
+    descendant gets a heading at its tree depth, so the PDF carries the shape
+    the log tree showed instead of running the sections together.
+    """
+    parts: "list[str]" = []
+    for index, (log, depth) in enumerate(ordered):
+        body = (log.calculation_log or "").strip()
+        if depth == 0:
+            if body:
+                parts.append(body)
+            continue
+        # Markdown has six heading levels; deeper nesting flattens onto the last
+        # rather than emitting ``#######``, which renders as literal text.
+        level = min(depth + 1, 6)
+        parts.append(f"{'#' * level} {_node_title(log, index)}")
+        parts.append(body if body else "_No output._")
+
+    if truncated:
+        parts.append(
+            "---\n\n"
+            f"_This document stops at {MAX_SUBTREE_NODES} sections. The "
+            "calculation has more; open the log tree to read the rest._"
+        )
+
+    return "\n\n".join(parts)
+
+
 class DownloadMarkdownPdf(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, pk, format=None):
+        """One calculation log as PDF, or that log and everything under it.
+
+        ``?include_descendants=true`` renders the whole subtree into a single
+        document. Without it the behaviour is exactly what it always was, so
+        every existing caller is unaffected.
+        """
         obj = CalculationLog.objects.filter(pk=pk).first()
-        md_text = (obj.calculation_log if obj else "") or ""
+        include_descendants = _wants_descendants(
+            request.query_params.get("include_descendants")
+        )
+
+        if obj is not None and include_descendants:
+            ordered, truncated = collect_subtree(obj)
+            md_text = build_subtree_markdown(ordered, truncated)
+            filename = f"document_{pk}_full.pdf"
+        else:
+            md_text = (obj.calculation_log if obj else "") or ""
+            filename = f"document_{pk}.pdf"
 
         full_html = build_document_html(md_text)
         try:
@@ -148,5 +270,5 @@ class DownloadMarkdownPdf(APIView):
             return HttpResponse("Error generating PDF", status=500)
 
         resp = HttpResponse(pdf_bytes, content_type="application/pdf")
-        resp["Content-Disposition"] = f'attachment; filename="document_{pk}.pdf"'
+        resp["Content-Disposition"] = f'attachment; filename="{filename}"'
         return resp
