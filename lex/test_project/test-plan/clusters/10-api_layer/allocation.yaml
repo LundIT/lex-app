@@ -1,7 +1,7 @@
 cluster: 10
 slug: api_layer
 title: API Layer
-max_scenario: 76
+max_scenario: 81
 letters:
   a:
     title: ''
@@ -73,15 +73,16 @@ letters:
     note: scenarios 10.17–10.23; `requests` patched
   i:
     title: Fields view, list UI info, field-type resolution
-    scenarios: 10.72-10.76
+    scenarios: 10.72-10.81
     status: complete
     tests:
-      pass: 5
+      pass: 10
       skip: 0
       xfail: 0
     note: earlier 10i scenarios (10.24-10.31c) are on disk with their tally folded into the cluster
       top-line in the pre-migration dashboard; 10.72-10.76 cover field-type resolution (BUG-F-004
-      numeric half)
+      numeric half); 10.77-10.81 cover choice columns and form-required (BUG-F-006, and BUG-015 /
+      BUG-F-008 -- the same defect tracked in both repos)
   j:
     title: ''
     scenarios: ''

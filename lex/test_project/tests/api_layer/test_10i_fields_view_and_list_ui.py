@@ -73,6 +73,7 @@ from lex.api.views.model_info.Fields import (
     Fields,
     create_field_info,
     create_list_ui_info,
+    normalise_choices,
     resolve_type_name,
 )
 
@@ -646,6 +647,144 @@ class TestCluster10i_TypeResolution(SimpleTestCase):
         ):
             with self.subTest(field=field_class.__name__):
                 self.assertEqual(resolve_type_name(field_class), DEFAULT_TYPE_NAME)
+
+# --------------------------------------------------------------------- #
+# Choice columns and form-required -- BUG-F-006 and BUG-F-008, the two
+# `model_info` contract gaps. Scenarios 10.77 - 10.81.
+# --------------------------------------------------------------------- #
+
+
+class TestCluster10i_ChoicesAndRequired(SimpleTestCase):
+    """The two keys the create/edit form cannot render a column without."""
+
+    # 10.77 -----------------------------------------------------------
+    def test_10_77_choices_reach_the_frontend_in_its_own_shape(self):
+        """A `choices` column must ship `[{id, name}]` (BUG-F-006).
+
+        `create_field_info` emitted no `choices` key at all, so
+        `FieldInputForCreateUpdate` fell through to a free-text input and
+        users could persist any string into a restricted column.
+
+        The shape is not negotiable and not DRF's: the frontend maps
+        `({ id, name }) => ...`, so emitting DRF's conventional
+        `{value, display_name}` would destructure to a list of
+        `{id: undefined, name: undefined}` -- a picker with the right
+        number of blank options, which reads as working.
+        """
+        field = CharField(
+            name="strategy",
+            verbose_name="strategy",
+            max_length=8,
+            choices=[("equity", "Equity"), ("bond", "Bond")],
+        )
+        field.editable, field.primary_key = True, False
+
+        info = create_field_info(field)
+        self.assertEqual(
+            info["choices"],
+            [{"id": "equity", "name": "Equity"}, {"id": "bond", "name": "Bond"}],
+        )
+
+    # 10.78 -----------------------------------------------------------
+    def test_10_78_no_choices_means_no_key_at_all(self):
+        """A plain column must not carry an empty `choices` list.
+
+        The frontend gate is `Array.isArray(choices) && choices.length > 0`,
+        so `[]` would be harmless today -- but absent is the honest signal,
+        and it keeps a `[]` from ever being read as "a picker with nothing
+        in it".
+        """
+        field = CharField(name="name", verbose_name="name", max_length=32)
+        field.editable, field.primary_key = True, False
+        self.assertNotIn("choices", create_field_info(field))
+
+    # 10.79 -----------------------------------------------------------
+    def test_10_79_grouped_choices_flatten_and_labels_stringify(self):
+        """Django optgroups flatten; lazy labels are forced to `str`.
+
+        Django allows `[("Group", [(value, label), ...])]`. Passed through
+        untouched, the group NAME becomes an option id and its member list
+        becomes the label. Translated labels are lazy proxies, which do not
+        survive JSON serialisation, so they are resolved here rather than
+        at the response boundary.
+        """
+        grouped = [
+            ("Listed", [("eq", "Equity"), ("etf", "ETF")]),
+            ("Unlisted", [("pe", "Private Equity")]),
+        ]
+        self.assertEqual(
+            normalise_choices(grouped),
+            [
+                {"id": "eq", "name": "Equity"},
+                {"id": "etf", "name": "ETF"},
+                {"id": "pe", "name": "Private Equity"},
+            ],
+        )
+
+        # DRF's ChoiceField hands a mapping, not pairs.
+        self.assertEqual(
+            normalise_choices({"a": "Alpha", "b": "Beta"}),
+            [{"id": "a", "name": "Alpha"}, {"id": "b", "name": "Beta"}],
+        )
+
+        # Absent / empty collapse to None so no key is emitted.
+        for empty_input in (None, [], {}):
+            with self.subTest(value=empty_input):
+                self.assertIsNone(normalise_choices(empty_input))
+
+    # 10.80 -----------------------------------------------------------
+    def test_10_80_non_blank_char_column_reports_required(self):
+        """A `blank=False` CharField must report `required=True` (BUG-F-008).
+
+        This is the scenario the bug was filed on and the one that stayed
+        broken through an earlier attempt at it. The check read
+        `not (field.null or default is not None)`, and Django synthesises a
+        `""` default for every CharField -- so the second term was always
+        true, the `null` term never got a look in, and EVERY char column
+        reported optional. No client validator attached, and empty-required
+        saves went to the backend to be 400'd, violating the no-request
+        contract.
+        """
+        field = CharField(name="name", verbose_name="name", max_length=32)
+        field.editable, field.primary_key = True, False
+
+        info = create_field_info(field)
+        self.assertEqual(
+            info["default_value"],
+            "",
+            "Pinning Django's synthesised empty-string default, because it "
+            "is what made the old expression always-optional.",
+        )
+        self.assertTrue(
+            info["required"],
+            "blank=False, null=False, no default -- the form must block an "
+            "empty save rather than let the backend 400 it.",
+        )
+
+    # 10.81 -----------------------------------------------------------
+    def test_10_81_blank_nullable_or_defaulted_columns_are_optional(self):
+        """Any of blank / null / has_default makes a column optional.
+
+        Mirrors DRF's own `ModelSerializer` rule, so the client validator
+        and the serializer that will judge the request agree. Getting this
+        backwards is worse than the original bug: a spuriously required
+        column blocks a save the backend would have accepted.
+        """
+        cases = (
+            ("blank", CharField(name="a", verbose_name="a", max_length=8, blank=True)),
+            ("null", CharField(name="b", verbose_name="b", max_length=8, null=True)),
+            ("default", CharField(name="c", verbose_name="c", max_length=8, default="x")),
+            ("int null", IntegerField(name="d", verbose_name="d", null=True)),
+        )
+        for label, field in cases:
+            with self.subTest(case=label):
+                field.editable, field.primary_key = True, False
+                self.assertFalse(create_field_info(field)["required"])
+
+        # Control: none of the three apply, so it stays required.
+        strict = IntegerField(name="e", verbose_name="e")
+        strict.editable, strict.primary_key = True, False
+        self.assertTrue(create_field_info(strict)["required"])
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
