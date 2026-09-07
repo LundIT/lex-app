@@ -221,6 +221,73 @@ class TestCluster14b_AGFlatAndFilterModel(E2ETestCase):
             f"got {self._names_from(resp)!r}",
         )
 
+    # -- 14.34 ---------------------------------------------------------
+    def test_14_34_filter_date_equals_datetime_without_time_spans_the_day(self):
+        """Scenario 14.34: ``DateTimeField`` + ``date`` ``equals`` with NO time.
+
+        The counterpart to 14.12, and the branch that had no test.
+        ``_ag_filter_has_time`` sees no time, so ``_build_filter_q`` uses
+        ``__date`` -- the WHOLE DAY -- rather than a second-precision window.
+
+        LEX-714 turned on exactly this branch being unreachable. The grid's
+        date-time filter hard-coded ``format='YYYY-MM-DDTHH:mm:ss'``, so a
+        date the user picked with no time still arrived as
+        ``2026-03-10T00:00:00``; the backend read that as time-bearing and
+        answered with a one-second window at midnight. The correct branch was
+        written, correct, and never reached -- which is why the wrong answer
+        looked healthy.
+
+        ``alpha-mid`` is stamped 13:30:45, so it can only be found by the
+        whole-day comparison.
+        """
+        req = _base_ag_request(
+            filterModel={
+                "created_at_ts": {
+                    "filterType": "date", "type": "equals",
+                    "dateFrom": "2026-03-10",
+                },
+            },
+        )
+        resp = self._post(req)
+        self.assertEqual(resp.status_code, 200, resp.data)
+        self.assertEqual(
+            self._names_from(resp),
+            {"alpha-mid"},
+            "A date with no time must match the whole day. Getting an empty "
+            "set here means the query went down the exact-instant branch.",
+        )
+
+    # -- 14.35 ---------------------------------------------------------
+    def test_14_35_midnight_stamp_is_an_instant_not_a_day(self):
+        """Scenario 14.35: ``…T00:00:00`` means midnight, not the day.
+
+        The contrast that gives 14.34 its meaning, and the query the UI used
+        to send for a date nobody put a time on. Both strings name the same
+        day; only one of them means it.
+
+        Pinned deliberately rather than treated as a quirk: the distinction is
+        the contract the frontend now depends on, so if the backend ever
+        starts treating a midnight stamp as a whole day, the checkbox in the
+        grid's filter becomes a lie in the other direction.
+        """
+        req = _base_ag_request(
+            filterModel={
+                "created_at_ts": {
+                    "filterType": "date", "type": "equals",
+                    "dateFrom": "2026-03-10T00:00:00Z",
+                },
+            },
+        )
+        resp = self._post(req)
+        self.assertEqual(resp.status_code, 200, resp.data)
+        self.assertEqual(
+            self._names_from(resp),
+            set(),
+            "alpha-mid is stamped 13:30:45, which is outside the one-second "
+            "window at midnight -- this is the answer the user used to get "
+            "when they picked a date and set no time.",
+        )
+
     # -- 14.13 ---------------------------------------------------------
     def test_14_13_filter_set_in_membership(self) -> None:
         """Scenario 14.13: ``filterType: set`` → ``__in`` against values."""
