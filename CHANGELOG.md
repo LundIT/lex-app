@@ -1,3 +1,13 @@
+## [2.2.0] - 2026-09-08
+
+> **Frontend changes for this release are not yet recorded.**
+
+### Changed
+- **backend** Record the PAC commit the shipped bundle was built from ([d277308c](https://github.com/ExcellenceCloudGmbH/lex-app/commit/d277308c)) (#757)
+- **backend** Four backend fixes: a credential leak, and three contracts the frontend was already ready for ([ef9ed850](https://github.com/ExcellenceCloudGmbH/lex-app/commit/ef9ed850)) (#756)
+- **backend** Fix NameError that stops lex streamlit starting ([588cbe72](https://github.com/ExcellenceCloudGmbH/lex-app/commit/588cbe72)) (#755)
+- **backend** Streamlit widget host: one flat lex_* call per widget, theme sync, and log export ([7f34d409](https://github.com/ExcellenceCloudGmbH/lex-app/commit/7f34d409)) (#754)
+
 ## [2.1.11] - 2026-09-06
 
 > **Frontend changes for this release are not yet recorded.**
