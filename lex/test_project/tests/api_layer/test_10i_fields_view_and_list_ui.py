@@ -37,12 +37,29 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from django.db.models import (
+    CASCADE,
     AutoField,
+    BigAutoField,
+    BigIntegerField,
     BooleanField,
+    CharField,
     DateField,
+    DateTimeField,
+    DecimalField,
+    DurationField,
+    EmailField,
+    FileField,
     FloatField,
     ForeignKey,
+    ImageField,
     IntegerField,
+    ManyToManyField,
+    OneToOneField,
+    PositiveIntegerField,
+    SlugField,
+    SmallIntegerField,
+    TextField,
+    UUIDField,
 )
 from django.test import SimpleTestCase
 from rest_framework import serializers as drf_serializers
@@ -56,6 +73,8 @@ from lex.api.views.model_info.Fields import (
     Fields,
     create_field_info,
     create_list_ui_info,
+    normalise_choices,
+    resolve_type_name,
 )
 
 import pytest
@@ -495,6 +514,277 @@ class TestCluster10i_TypeMaps(SimpleTestCase):
         self.assertEqual(DRF_FIELD2TYPE_NAME[drf_serializers.JSONField], "json")
         self.assertEqual(DEFAULT_TYPE_NAME, "string")
 
+
+# --------------------------------------------------------------------- #
+# Type resolution — BUG-F-004 (numeric half) and the exact-match trap
+# that caused it. Scenarios 10.72 – 10.76.
+# --------------------------------------------------------------------- #
+
+
+class TestCluster10i_TypeResolution(SimpleTestCase):
+    """`resolve_type_name` — the lookup the whole form/filter layer keys off."""
+
+    # 10.72 -----------------------------------------------------------
+    def test_10_72_decimal_field_reports_float_not_string(self):
+        """A Django `DecimalField` must report `float` (BUG-F-004, numeric half).
+
+        `DecimalField` was absent from `DJANGO_FIELD2TYPE_NAME`, so every
+        money / quantity column fell through to `DEFAULT_TYPE_NAME` and the
+        grid handed it the TEXT filter — substring matching on a number,
+        with no gt / lt / inRange. The frontend was ready the whole time:
+        its `getFilterForField` already maps `float` to
+        `agNumberColumnFilter`. Note the asymmetry this closes —
+        `DRF_FIELD2TYPE_NAME` mapped `DecimalField` correctly, so a
+        serializer-declared decimal worked while a model one did not.
+        """
+        self.assertEqual(DJANGO_FIELD2TYPE_NAME[DecimalField], "float")
+        self.assertEqual(resolve_type_name(DecimalField), "float")
+
+        nav = DecimalField(
+            name="nav", verbose_name="nav", max_digits=12, decimal_places=2
+        )
+        nav.editable, nav.null, nav.primary_key = True, False, False
+        self.assertEqual(
+            create_field_info(nav)["type"],
+            "float",
+            "A DecimalField reaching the FE as 'string' is what put the "
+            "text filter on every numeric column.",
+        )
+
+    # 10.73 -----------------------------------------------------------
+    def test_10_73_subclass_walk_keeps_the_most_derived_match(self):
+        """Specificity guard: `DateTimeField` must not collapse to `date`.
+
+        The lookup walks `__mro__`, and Django's own hierarchy holds two
+        traps: `DateTimeField` subclasses `DateField`, and `ImageField`
+        subclasses `FileField`. A subclass check in the wrong order would
+        report a datetime column as a date — a picker that silently drops
+        the time — so pin both directions rather than trusting the walk.
+        """
+        self.assertEqual(resolve_type_name(DateTimeField), "date_time")
+        self.assertEqual(resolve_type_name(DateField), "date")
+        self.assertEqual(resolve_type_name(ImageField), "image_file")
+        self.assertEqual(resolve_type_name(FileField), "file")
+
+    # 10.74 -----------------------------------------------------------
+    def test_10_74_unregistered_subclasses_resolve_to_their_base_type(self):
+        """An unmapped subclass inherits its base's type instead of `string`.
+
+        This is the half that prevents the NEXT BUG-F-004: Django ships
+        numeric subclasses that were never registered, and projects define
+        their own. Every one of them used to report `string` and get the
+        text filter. `BigAutoField` is the one that mattered most in
+        practice — it is the default primary key on modern Django, so
+        every model's `id` column was affected.
+        """
+        for field_class, expected in (
+            (BigAutoField, "int"),
+            (BigIntegerField, "int"),
+            (PositiveIntegerField, "int"),
+            (SmallIntegerField, "int"),
+        ):
+            with self.subTest(field=field_class.__name__):
+                self.assertEqual(resolve_type_name(field_class), expected)
+
+        class ProjectDecimalField(DecimalField):
+            """Stand-in for a customer's own field subclass."""
+
+        self.assertEqual(resolve_type_name(ProjectDecimalField), "float")
+
+    # 10.75 -----------------------------------------------------------
+    def test_10_75_one_to_one_resolves_to_foreign_key_with_a_target(self):
+        """`OneToOneField` gets the FK type AND the `target` that renders it.
+
+        Type resolution and `additional_info` are two lookups on the same
+        field and they have to agree. Once `OneToOneField` resolves to
+        `foreign_key` through its base, an exact `type(field) == ForeignKey`
+        check on the target branch hands the frontend an FK column with no
+        model to resolve against — strictly worse than the `string` it
+        reported before, because the FK renderer has nothing to read.
+        """
+        self.assertEqual(resolve_type_name(OneToOneField), "foreign_key")
+
+        o2o = OneToOneField(
+            "probe.Target", on_delete=CASCADE, name="owner", verbose_name="owner"
+        )
+        o2o.editable, o2o.null, o2o.primary_key = True, True, False
+        # A real class, not a namespace: `OneToOneField.get_default` runs
+        # `isinstance(default, self.remote_field.model)`, which needs a type.
+        class _Target:
+            _meta = SimpleNamespace(model_name="target", pk=SimpleNamespace(name="id"))
+
+        o2o.remote_field = SimpleNamespace(model=_Target, limit_choices_to={})
+
+        info = create_field_info(o2o)
+        self.assertEqual(info["type"], "foreign_key")
+        self.assertEqual(
+            info["target"],
+            "target",
+            "An FK-typed column without a target renders nothing.",
+        )
+
+    # 10.76 -----------------------------------------------------------
+    def test_10_76_unrelated_types_still_fall_through_to_string(self):
+        """The walk must not over-capture: unmapped roots stay `string`.
+
+        `ManyToManyField` is the one to watch. It is NOT a `ForeignKey`
+        subclass, so neither the type map nor the target branch may claim
+        it — if either did, a m2m column would render as a single FK.
+        """
+        self.assertFalse(
+            issubclass(ManyToManyField, ForeignKey),
+            "If Django ever changes this, the FK target branch needs "
+            "revisiting — it is an isinstance check.",
+        )
+        for field_class in (
+            CharField,
+            TextField,
+            EmailField,
+            SlugField,
+            UUIDField,
+            DurationField,
+            ManyToManyField,
+        ):
+            with self.subTest(field=field_class.__name__):
+                self.assertEqual(resolve_type_name(field_class), DEFAULT_TYPE_NAME)
+
+# --------------------------------------------------------------------- #
+# Choice columns and form-required -- BUG-F-006 and BUG-F-008, the two
+# `model_info` contract gaps. Scenarios 10.77 - 10.81.
+# --------------------------------------------------------------------- #
+
+
+class TestCluster10i_ChoicesAndRequired(SimpleTestCase):
+    """The two keys the create/edit form cannot render a column without."""
+
+    # 10.77 -----------------------------------------------------------
+    def test_10_77_choices_reach_the_frontend_in_its_own_shape(self):
+        """A `choices` column must ship `[{id, name}]` (BUG-F-006).
+
+        `create_field_info` emitted no `choices` key at all, so
+        `FieldInputForCreateUpdate` fell through to a free-text input and
+        users could persist any string into a restricted column.
+
+        The shape is not negotiable and not DRF's: the frontend maps
+        `({ id, name }) => ...`, so emitting DRF's conventional
+        `{value, display_name}` would destructure to a list of
+        `{id: undefined, name: undefined}` -- a picker with the right
+        number of blank options, which reads as working.
+        """
+        field = CharField(
+            name="strategy",
+            verbose_name="strategy",
+            max_length=8,
+            choices=[("equity", "Equity"), ("bond", "Bond")],
+        )
+        field.editable, field.primary_key = True, False
+
+        info = create_field_info(field)
+        self.assertEqual(
+            info["choices"],
+            [{"id": "equity", "name": "Equity"}, {"id": "bond", "name": "Bond"}],
+        )
+
+    # 10.78 -----------------------------------------------------------
+    def test_10_78_no_choices_means_no_key_at_all(self):
+        """A plain column must not carry an empty `choices` list.
+
+        The frontend gate is `Array.isArray(choices) && choices.length > 0`,
+        so `[]` would be harmless today -- but absent is the honest signal,
+        and it keeps a `[]` from ever being read as "a picker with nothing
+        in it".
+        """
+        field = CharField(name="name", verbose_name="name", max_length=32)
+        field.editable, field.primary_key = True, False
+        self.assertNotIn("choices", create_field_info(field))
+
+    # 10.79 -----------------------------------------------------------
+    def test_10_79_grouped_choices_flatten_and_labels_stringify(self):
+        """Django optgroups flatten; lazy labels are forced to `str`.
+
+        Django allows `[("Group", [(value, label), ...])]`. Passed through
+        untouched, the group NAME becomes an option id and its member list
+        becomes the label. Translated labels are lazy proxies, which do not
+        survive JSON serialisation, so they are resolved here rather than
+        at the response boundary.
+        """
+        grouped = [
+            ("Listed", [("eq", "Equity"), ("etf", "ETF")]),
+            ("Unlisted", [("pe", "Private Equity")]),
+        ]
+        self.assertEqual(
+            normalise_choices(grouped),
+            [
+                {"id": "eq", "name": "Equity"},
+                {"id": "etf", "name": "ETF"},
+                {"id": "pe", "name": "Private Equity"},
+            ],
+        )
+
+        # DRF's ChoiceField hands a mapping, not pairs.
+        self.assertEqual(
+            normalise_choices({"a": "Alpha", "b": "Beta"}),
+            [{"id": "a", "name": "Alpha"}, {"id": "b", "name": "Beta"}],
+        )
+
+        # Absent / empty collapse to None so no key is emitted.
+        for empty_input in (None, [], {}):
+            with self.subTest(value=empty_input):
+                self.assertIsNone(normalise_choices(empty_input))
+
+    # 10.80 -----------------------------------------------------------
+    def test_10_80_non_blank_char_column_reports_required(self):
+        """A `blank=False` CharField must report `required=True` (BUG-F-008).
+
+        This is the scenario the bug was filed on and the one that stayed
+        broken through an earlier attempt at it. The check read
+        `not (field.null or default is not None)`, and Django synthesises a
+        `""` default for every CharField -- so the second term was always
+        true, the `null` term never got a look in, and EVERY char column
+        reported optional. No client validator attached, and empty-required
+        saves went to the backend to be 400'd, violating the no-request
+        contract.
+        """
+        field = CharField(name="name", verbose_name="name", max_length=32)
+        field.editable, field.primary_key = True, False
+
+        info = create_field_info(field)
+        self.assertEqual(
+            info["default_value"],
+            "",
+            "Pinning Django's synthesised empty-string default, because it "
+            "is what made the old expression always-optional.",
+        )
+        self.assertTrue(
+            info["required"],
+            "blank=False, null=False, no default -- the form must block an "
+            "empty save rather than let the backend 400 it.",
+        )
+
+    # 10.81 -----------------------------------------------------------
+    def test_10_81_blank_nullable_or_defaulted_columns_are_optional(self):
+        """Any of blank / null / has_default makes a column optional.
+
+        Mirrors DRF's own `ModelSerializer` rule, so the client validator
+        and the serializer that will judge the request agree. Getting this
+        backwards is worse than the original bug: a spuriously required
+        column blocks a save the backend would have accepted.
+        """
+        cases = (
+            ("blank", CharField(name="a", verbose_name="a", max_length=8, blank=True)),
+            ("null", CharField(name="b", verbose_name="b", max_length=8, null=True)),
+            ("default", CharField(name="c", verbose_name="c", max_length=8, default="x")),
+            ("int null", IntegerField(name="d", verbose_name="d", null=True)),
+        )
+        for label, field in cases:
+            with self.subTest(case=label):
+                field.editable, field.primary_key = True, False
+                self.assertFalse(create_field_info(field)["required"])
+
+        # Control: none of the three apply, so it stays required.
+        strict = IntegerField(name="e", verbose_name="e")
+        strict.editable, strict.primary_key = True, False
+        self.assertTrue(create_field_info(strict)["required"])
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()

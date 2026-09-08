@@ -1,7 +1,7 @@
 cluster: 12
 slug: serializers
 title: Serializer Contract
-max_scenario: 48
+max_scenario: 53
 letters:
   a:
     title: Read contract — field visibility & framework-managed fields
@@ -95,6 +95,31 @@ letters:
       ModelExport._apply_foreign_key_display_names), detail resolves per-instance; raw id untouched so
       filtering/editing unaffected; null FK → null companion. Resolves the backend root cause of
       frontend BUG-F-003 (FK columns rendered as bare ids)
+  k:
+    title: A credential-shaped column never reaches a response
+    scenarios: 12.49-12.53
+    status: complete
+    tests:
+      pass: 5
+      skip: 0
+      xfail: 0
+    note: >-
+      LEX-702 / BUG-F-033 backend half. auth.User was served through model_entries WITH its Django
+      password hash, and the LEAST-privileged account could read the MOST-privileged account's --
+      verified on a clean harness, HTTP 200. The FK hover card then painted it wherever a grid held
+      an FK to User.
+      NOT a permission bypass, and that is the whole point of the cluster. Field-level read scoping
+      works correctly on that endpoint (admin gets nav, the restricted viewer's payload omits the
+      key). Two things went around it: UserModelSerializer is a plain DRF ModelSerializer and not a
+      LexSerializer, so can_read / permission_read never ran for it at all; and a model declaring
+      neither hook falls through to "all fields" even inside LexSerializer. So the fix cannot be a
+      permission rule -- it is a name-based refusal, at two enforcement points, plus an allowlist
+      replacing fields = "__all__".
+      Matching is exact-name plus unambiguous suffixes, deliberately NOT the substring search the
+      frontend's hover-card denylist uses: `hash` would swallow content_hash and `auth` would
+      swallow author, and a silently missing field is its own bug. 12.53 pins both directions.
+      There WAS a unit test asserting Meta.fields == "__all__" -- it encoded the bug. Rewritten
+      inverted in lex/tests/unit/api/test_model_entry_provider_mixin.py.
   j:
     title: Datetime write→read round trip under the aware-UTC convention
     scenarios: 12.46-12.48
