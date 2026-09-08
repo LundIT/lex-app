@@ -30,14 +30,201 @@
       Learn how to configure a non-root public URL by running `npm run build`.
     -->
     <title id="window-title">Process Admin Client</title>
-    <script type="module" crossorigin src="/assets/index-DMLDxN6j.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-isLX8XQ_.css">
+    <script>
+      /* Lift the Quackback feedback launcher off the bottom-right corner so
+         it doesn't cover the edit drawer's footer actions (Delete sits
+         exactly under the default position). The SDK's DOM is opaque
+         (generated names / possible shadow root), so instead of guessing
+         selectors, watch body for injected elements and raise any SMALL
+         fixed-position bubble parked in that corner. MUI portals (drawers,
+         modals) also mount on body but are excluded by the Mui class check
+         and the size guard. */
+      (function () {
+        var LIFT = '88px'
+        // Launchers we've matched, so a sidebar-side flip can re-place them
+        // live (after moving left they no longer match the corner heuristic).
+        var launchers = []
+
+        function sidebarSide() {
+          try {
+            return localStorage.getItem('lex.sidebar-side') === 'right' ? 'right' : 'left'
+          } catch (e) {
+            return 'left'
+          }
+        }
+
+        /* Place a matched launcher in the corner OPPOSITE the sidebar, lifted
+           off the very bottom so it clears the edit-drawer footer actions.
+           Sidebar left (default) -> bubble bottom-RIGHT; sidebar right ->
+           bubble bottom-LEFT. Both corners are pinned EXPLICITLY (with the
+           other set to auto) so every flip visibly moves it. */
+        /* Give an element back to the SDK.
+           Our pins are `!important` inline styles, so while they are on an
+           element the SDK cannot position it at all. That is fine for a bubble
+           parked in a corner and wrong for anything else -- see `watch`. */
+        function release(c) {
+          try {
+            c.style.removeProperty('bottom')
+            c.style.removeProperty('left')
+            c.style.removeProperty('right')
+            c.style.removeProperty('transition')
+          } catch (e) {
+            /* never break the app over widget cosmetics */
+          }
+        }
+
+        /* A launcher that grows is no longer a launcher.
+           The bug this fixes: opening the widget expands it into a panel, and
+           our pins held that panel at bottom:88px/right:16px. A panel taller
+           than the viewport minus 88px then has its TOP -- and therefore its
+           close button -- pushed off-screen, so it could be opened and not
+           closed. The same happens when the observer catches a panel mid-open,
+           while it is still small enough to look like a bubble.
+           So the pins are not permanent: they come off the moment the element
+           stops being bubble-shaped, and go back on if it shrinks again. */
+        function watch(c) {
+          if (typeof ResizeObserver !== 'function') return
+          try {
+            new ResizeObserver(function () {
+              var rect = c.getBoundingClientRect()
+              var isBubble = rect.width > 0 && rect.width <= 180 && rect.height <= 180
+              if (isBubble) place(c)
+              else release(c)
+            }).observe(c)
+          } catch (e) {
+            /* never break the app over widget cosmetics */
+          }
+        }
+
+        function place(c) {
+          try {
+            c.style.setProperty('transition', 'left 0.3s ease, right 0.3s ease', 'important')
+            c.style.setProperty('bottom', LIFT, 'important')
+            if (sidebarSide() === 'right') {
+              c.style.setProperty('left', '16px', 'important')
+              c.style.setProperty('right', 'auto', 'important')
+            } else {
+              c.style.setProperty('right', '16px', 'important')
+              c.style.setProperty('left', 'auto', 'important')
+            }
+          } catch (e) {
+            /* never break the app over widget cosmetics */
+          }
+        }
+
+        function liftIfLauncher(el) {
+          try {
+            if (!el || el.nodeType !== 1) return
+            if (el.id === 'root' || el.tagName === 'SCRIPT' || el.tagName === 'STYLE') return
+            if (typeof el.className === 'string' && el.className.indexOf('Mui') !== -1) return
+            var candidates = [el]
+            if (el.querySelectorAll) {
+              candidates = candidates.concat(
+                Array.prototype.slice.call(el.querySelectorAll('iframe, div, button')),
+              )
+            }
+            candidates.forEach(function (c) {
+              if (launchers.indexOf(c) !== -1) return
+              if (typeof c.className === 'string' && c.className.indexOf('Mui') !== -1) return
+              var cs = window.getComputedStyle(c)
+              if (cs.position !== 'fixed') return
+              var rect = c.getBoundingClientRect()
+              // Small bubble parked at the bottom-right corner.
+              if (rect.width === 0 || rect.width > 180 || rect.height > 180) return
+              if (window.innerHeight - rect.bottom > 60) return
+              if (window.innerWidth - rect.right > 120) return
+              launchers.push(c)
+              place(c)
+              watch(c)
+            })
+          } catch (e) {
+            /* never break the app over widget cosmetics */
+          }
+        }
+        function scan() {
+          Array.prototype.forEach.call(document.body.children, liftIfLauncher)
+        }
+        document.addEventListener('DOMContentLoaded', function () {
+          new MutationObserver(function (mutations) {
+            mutations.forEach(function (m) {
+              Array.prototype.forEach.call(m.addedNodes, function (n) {
+                // Widgets often style themselves a tick after insertion.
+                setTimeout(function () {
+                  liftIfLauncher(n)
+                }, 300)
+              })
+            })
+          }).observe(document.body, { childList: true })
+          // Catch anything injected before the observer attached.
+          setTimeout(scan, 1500)
+          setTimeout(scan, 4000)
+        })
+        // Re-place live when the app flips the sidebar side (event fired by
+        // src/components/CustomSidebar/useSidebarSide.ts).
+        window.addEventListener('lex:sidebar-side-changed', function () {
+          launchers.forEach(function (c) {
+            /* Only re-place what is still a bubble. Re-pinning an OPEN panel
+               here would reintroduce exactly the trap above, on a flip. */
+            var rect = c.getBoundingClientRect()
+            if (rect.width > 0 && rect.width <= 180 && rect.height <= 180) place(c)
+          })
+        })
+      })()
+
+      /*
+       * Am I framed? Answered once, in the head, and published two ways.
+       *
+       * In the HEAD deliberately: `data-framed` drives the rule in App.css that
+       * stops the app painting its own page background, and that has to be on
+       * the element before the stylesheet applies — otherwise the app flashes
+       * its own grey over the host's surface on every load.
+       *
+       * Structural rather than URL-derived, so it cannot go stale the way the
+       * sessionStorage-backed embed snapshot can. A cross-origin parent throws
+       * on access, which itself proves we are framed.
+       */
+      ;(function () {
+        var framed
+        try {
+          framed = window.self !== window.top
+        } catch (e) {
+          framed = true
+        }
+        if (framed) document.documentElement.setAttribute('data-framed', 'true')
+        // One feedback launcher per page, and a frame is never the page.
+        window.__lexQuackbackAllowed = !framed
+      })()
+    </script>
+    <script type="module" crossorigin src="/assets/main-Cfrrc9ln.js"></script>
+    <link rel="modulepreload" crossorigin href="/assets/SessionAuthGate-BB6V9OL2.js">
+    <link rel="stylesheet" crossorigin href="/assets/SessionAuthGate-Cpfxv-bc.css">
+    <link rel="stylesheet" crossorigin href="/assets/main-D8qVAgsi.css">
   </head>
   <body>
     <noscript>You need to enable JavaScript to run this app.</noscript>
     <div id="root"></div>
     <script>
-      (function(w,d){if(w.Quackback)return;w.Quackback=function(){
+      /*
+       * The feedback launcher belongs to whatever the user perceives as "the
+       * page", and that is never a frame.
+       *
+       * Embedded, every iframe mounted its own launcher: a Streamlit dashboard
+       * with N embeds showed N stacked bubbles, each costing its own
+       * /api/quackback-widget-token request. The reverse case is the same
+       * mistake — a Streamlit page embedded inside lex-app must not stack a
+       * second launcher over the host's.
+       *
+       * `window.self !== window.top` settles both directions with one rule: the
+       * top-level document owns the launcher, a framed document never does.
+       * Testing that rather than an `embed=true` parameter means it holds
+       * however the frame was addressed. A cross-origin parent throws on
+       * access, which itself proves we are framed.
+       */
+      /* window.__lexQuackbackAllowed is decided in the head script above,
+         alongside the data-framed attribute, so both answers come from one
+         frame check rather than two that could disagree. */
+
+      (function(w,d){if(!w.__lexQuackbackAllowed)return;if(w.Quackback)return;w.Quackback=function(){
       (w.Quackback.q=w.Quackback.q||[]).push(arguments)};
       var s=d.createElement("script");s.async=true;
       var applicationKey = window.location.hostname === 'localhost' ? "lex-app-local" : "lex-app-production";
@@ -54,6 +241,14 @@
         if (parts.length === 2) return parts.pop().split(";").shift();
         return "";
       }
+
+      /*
+       * Same gate as the loader above, and it has to be repeated here because
+       * this block runs independently: without it a framed document still
+       * called Quackback("init") and still POSTed for a widget token, which is
+       * where the /api/quackback-widget-token 500-per-page-load came from.
+       */
+      if (window.__lexQuackbackAllowed) {
 
       Quackback("init", {
         instanceUrl: "https://hub.excellence-cloud.de",
@@ -79,6 +274,8 @@
         .catch(function(err) {
           console.warn("Quackback identify failed", err);
         });
+
+      }  /* end window.__lexQuackbackAllowed */
     </script>
     <!--
       This HTML file is a template.

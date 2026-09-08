@@ -1,0 +1,1 @@
+import{i$ as t,j0 as r,de as e,j1 as a,j2 as i,j3 as o,j4 as l,hi as n,j5 as s}from"./SessionAuthGate-BB6V9OL2.js";const c=new t;localStorage.getItem("calculation_ids")||localStorage.setItem("calculation_ids",JSON.stringify({}));r.createRoot(document.getElementById("root")).render(e(s,{client:c,children:e(a,{store:i,children:e(o,{children:e(l,{children:e(n,{})})})})}));
