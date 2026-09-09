@@ -18,11 +18,10 @@
 
 ## [2.1.10] - 2026-09-04
 
-> **Frontend changes for this release are not yet recorded.**
+> No frontend change: the bundle is unchanged from `v2.1.4`.
 
-## [2.1.9] - 2026-09-04
-
-> **Frontend changes for this release are not yet recorded.**
+<!-- 2.1.9 was tagged but never published to PyPI; its GitHub release and tag
+     were removed. These changes reached users in 2.1.10. -->
 
 ### Added
 - **backend** give the drafter the context the backfill needed ([9633952a](https://github.com/ExcellenceCloudGmbH/lex-app/commit/9633952a)) (#742)
