@@ -100,3 +100,18 @@ def test_a_help_centre_article_posts_to_the_articles_resource():
     assert calls[0]["url"].endswith("/help-center/articles")
     assert calls[0]["payload"]["categoryId"] == "category_01kvwdt8exe069w36qdfzr545q"
     assert entry["id"] == "article_1"
+
+
+def test_requests_carry_an_explicit_user_agent():
+    """The Hub 403s urllib's default User-Agent.
+
+    403 is also what a bad token returns, so dropping this header produces a
+    failure that reads as "the credential is wrong" while the credential is
+    fine. Measured against the live instance: no UA is 403, any named UA is
+    200.
+    """
+    headers = quackback._headers("qb_test")
+    assert headers["User-Agent"] == quackback.USER_AGENT
+    assert "urllib" not in headers["User-Agent"].lower()
+    assert headers["Authorization"] == "Bearer qb_test"
+    assert headers["Content-Type"] == "application/json"

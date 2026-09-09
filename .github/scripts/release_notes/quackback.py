@@ -30,11 +30,16 @@ import urllib.error
 import urllib.request
 from typing import Callable
 
+# The same host the app already embeds for the feedback widget
+# (lex/lex_app/streamlit/quackback.py), though the two surfaces are unrelated.
 BASE_URL = "https://hub.excellence-cloud.de/api/v1"
 
-# Matches the constant the app already embeds for the feedback widget
-# (lex/lex_app/streamlit/quackback.py), so there is one host in one place
-# conceptually even though the two surfaces are unrelated.
+# The Hub answers 403 to urllib's default `Python-urllib/3.x` User-Agent, and
+# 403 is the same status a bad token produces -- so the symptom points straight
+# at the credential while the credential is fine. Measured against the live
+# instance: no UA 403s, any named UA is 200. Hence an explicit one.
+USER_AGENT = "lex-app-release-notes/1.0"
+
 CHANGELOG_PATH = "/changelog"
 ARTICLES_PATH = "/help-center/articles"
 
@@ -47,14 +52,20 @@ class QuackbackError(RuntimeError):
     """
 
 
+def _headers(token: str) -> dict:
+    """Request headers. Separate so the User-Agent can be asserted in a test."""
+    return {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+        "User-Agent": USER_AGENT,
+    }
+
+
 def _post(url: str, payload: dict, *, token: str, timeout: int = 30) -> dict:
     request = urllib.request.Request(
         url,
         data=json.dumps(payload).encode("utf-8"),
-        headers={
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-        },
+        headers=_headers(token),
         method="POST",
     )
     try:
