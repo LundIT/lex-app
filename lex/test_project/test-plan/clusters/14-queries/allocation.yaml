@@ -1,7 +1,7 @@
 cluster: 14
 slug: queries
 title: AG Grid Query Endpoint
-max_scenario: 33
+max_scenario: 35
 letters:
   a:
     title: GET list — query-param filtering & ordering
@@ -43,6 +43,29 @@ letters:
       xfail: 0
     note: counts folded into cluster top-line in pre-migration dashboard; per-letter tally not separately
       recorded
+  i:
+    title: A date with no time means the whole day
+    scenarios: 14.34-14.35
+    status: complete
+    tests:
+      pass: 2
+      skip: 0
+      xfail: 0
+    note: >-
+      LEX-714. 14.12 covered the time-bearing branch of the DateTimeField date filter; the DATE-ONLY
+      branch beside it had no test, which is how it stayed correct and unreachable at the same time.
+      The grid's AGDateTimeFilter hard-coded format='YYYY-MM-DDTHH:mm:ss', so a date the user picked
+      with no time still arrived as `2026-03-10T00:00:00`. _ag_filter_has_time read that as
+      time-bearing and _build_filter_q answered with `>= 00:00:00 AND < 00:00:01` -- a one-second
+      window at midnight. Every other row that day was silently excluded and the grid looked
+      healthy.
+      14.34 pins the whole-day comparison (alpha-mid is stamped 13:30:45, so only `__date` finds
+      it). 14.35 pins the contrast -- a midnight stamp is an INSTANT, not a day, and returns
+      nothing. Both strings name the same day; only one of them means it. 14.35 is deliberately
+      pinning current behaviour rather than a bug: it is the contract the frontend fix now depends
+      on, so if a midnight stamp ever starts meaning a whole day, the grid's new time checkbox
+      becomes a lie in the other direction.
+      Backend needed no change. The frontend half is F3.62-F3.65.
   e:
     title: Secondary filter / sort branches (April 21)
     scenarios: 14.21-14.25

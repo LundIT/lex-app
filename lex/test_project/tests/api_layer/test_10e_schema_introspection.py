@@ -117,15 +117,18 @@ class TestCluster10e_CreateFieldInfo(TestCase):
         )
 
         name_info = create_field_info(self._field(SchemaItem, "name"))
-        # NOTE: BUG-015 candidate — Django's ``CharField.get_default()``
-        # returns the empty string ``""`` when no explicit ``default=``
-        # is set, so the framework's ``required = not (null or default
-        # is not None)`` check reports ``required=False``. A user-facing
-        # POST without ``name`` still fails at serializer validation
-        # time, so the frontend and backend disagree. Treated as an
-        # acceptable-for-now surface: we assert the behaviour stays
-        # consistent (non-null CharField reports a string default, not
-        # None) rather than ``required=True``.
+        # BUG-015 / BUG-F-008, fixed 2026-09-07. The check used to read
+        # ``required = not (field.null or default is not None)``, and Django
+        # synthesises a ``""`` default for every CharField, so that second
+        # term was always true and no char column ever reported required.
+        # The frontend attached no validator and the user only learned the
+        # field was mandatory from the serializer's 400. It now reads
+        # ``not (blank or null or has_default())`` -- DRF's own
+        # ModelSerializer rule, so client and server agree.
+        #
+        # ``default_value`` is deliberately UNCHANGED: the empty-string
+        # default is what Django really reports, and it is the form's
+        # initial value. Only the required derivation was wrong.
         self.assertEqual(
             name_info["default_value"], "",
             msg=(
@@ -133,6 +136,11 @@ class TestCluster10e_CreateFieldInfo(TestCase):
                 "empty-string default Django provides; anything else "
                 "signals a drift in the metadata contract"
             ),
+        )
+        self.assertTrue(
+            name_info["required"],
+            "blank=False, null=False, no explicit default -- the form must "
+            "block the empty save rather than let the serializer 400 it",
         )
         self.assertFalse(
             name_info["is_pk"],

@@ -2,6 +2,7 @@ from django.db.models import (
     ForeignKey,
     IntegerField,
     FloatField,
+    DecimalField,
     BooleanField,
     DateField,
     DateTimeField,
@@ -28,6 +29,7 @@ DJANGO_FIELD2TYPE_NAME = {
     ForeignKey: "foreign_key",
     IntegerField: "int",
     FloatField: "float",
+    DecimalField: "float",
     BooleanField: "boolean",
     DateField: "date",
     DateTimeField: "date_time",
@@ -37,6 +39,46 @@ DJANGO_FIELD2TYPE_NAME = {
     ImageField: "image_file",
     JSONField: "json",
 }
+
+
+def resolve_type_name(ftype):
+    """Map a Django field class to its API type name, subclasses included."""
+    # Walk the MRO instead of testing isinstance: it keeps the most derived
+    # match, which matters because DateTimeField subclasses DateField and
+    # ImageField subclasses FileField. An exact hit is still the first hit.
+    for klass in ftype.__mro__:
+        type_name = DJANGO_FIELD2TYPE_NAME.get(klass)
+        if type_name is not None:
+            return type_name
+    return DEFAULT_TYPE_NAME
+
+
+def normalise_choices(raw):
+    """Flatten Django/DRF choices into the ``[{id, name}]`` the FE reads.
+
+    Two shapes arrive here: Django hands a sequence of ``(value, label)``
+    pairs, DRF's ``ChoiceField`` hands a mapping. Django also allows grouped
+    choices — ``[("Group", [(value, label), ...])]`` — which the SelectInput
+    has no optgroup for, so groups are flattened to their members.
+
+    Labels are forced through ``str`` because a translated label is a lazy
+    proxy, which does not survive JSON serialisation.
+    """
+    if not raw:
+        return None
+
+    pairs = raw.items() if hasattr(raw, "items") else raw
+    choices = []
+    for value, label in pairs:
+        if isinstance(label, (list, tuple)):
+            choices.extend(
+                {"id": sub_value, "name": str(sub_label)}
+                for sub_value, sub_label in label
+            )
+        else:
+            choices.append({"id": value, "name": str(label)})
+    return choices or None
+
 
 # DRF Field → API type (for serializer-only fields)
 DRF_FIELD2TYPE_NAME = {
@@ -67,16 +109,33 @@ def create_field_info(field):
     ftype = type(field)
 
     additional_info = {}
-    if ftype == ForeignKey:
+    # isinstance, not ==: OneToOneField subclasses ForeignKey and resolves to
+    # "foreign_key", so it needs the target the FK renderer reads. An exact
+    # check gave it the type without the target, which renders nothing.
+    if isinstance(field, ForeignKey):
         additional_info['target'] = field.remote_field.model._meta.model_name
         additional_info['limit_choices_to'] = field.remote_field.limit_choices_to
+
+    # BUG-F-006: without this the FE has nothing to build a SelectInput from,
+    # falls through to a free-text input, and lets users persist values the
+    # column does not allow.
+    choices = normalise_choices(getattr(field, "choices", None))
+    if choices is not None:
+        additional_info['choices'] = choices
 
     info = {
         "name": field.name,
         "readable_name": field.verbose_name.title(),
-        "type": DJANGO_FIELD2TYPE_NAME.get(ftype, DEFAULT_TYPE_NAME),
+        "type": resolve_type_name(ftype),
         "editable": field.editable and not isinstance(field, AutoField),
-        "required": not (field.null or default is not None),
+        # `blank`, not just `null`: Django decides form-required from `blank`
+        # and DB-nullability from `null`, and DRF's ModelSerializer requires a
+        # field only when none of blank/null/has_default apply. Reading
+        # `default is not None` instead of `has_default()` was the actual
+        # BUG-F-008: Django synthesises a `""` default for any CharField, so
+        # that term was always true and EVERY char column reported optional,
+        # blank=False included.
+        "required": not (field.blank or field.null or field.has_default()),
         "default_value": default,
         'is_pk': bool(field.primary_key),
         **additional_info
@@ -179,6 +238,17 @@ class Fields(APIView):
                     # ``enableRowGroup`` / ``enablePivot`` on the column.
                     "is_groupable": False,
                 }
+
+                # A serializer-declared ChoiceField deserves the same
+                # SelectInput as a model one; leaving it out here would
+                # reproduce BUG-F-006 in the fallback branch. DRF hands
+                # a mapping rather than pairs, which normalise_choices
+                # takes as-is.
+                drf_choices = normalise_choices(
+                    getattr(drf_field, "choices", None)
+                )
+                if drf_choices is not None:
+                    info["choices"] = drf_choices
 
                 # Related-field target
                 if isinstance(drf_field, drf_serializers.PrimaryKeyRelatedField):

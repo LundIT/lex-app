@@ -13,6 +13,11 @@ from rest_framework import serializers, viewsets
 logger = logging.getLogger(__name__)
 
 # Field-names that React-Admin expects
+from lex.api.serializers.sensitive_fields import (
+    filter_sensitive_field_names,
+    strip_sensitive_fields,
+)
+
 ID_FIELD_NAME = "id_field"
 SHORT_DESCR_NAME = "short_description"
 LEX_SCOPES_NAME = "lex_reserved_scopes"
@@ -739,6 +744,17 @@ class LexSerializer(serializers.ModelSerializer):
             if field_name not in visible_fields and field_name not in allowed_non_model_fields:
                 representation.pop(field_name, None)
 
+        # LEX-702, the output boundary. The visible-fields filter above is
+        # driven by can_read / permission_read, and a model that declares
+        # neither falls through to "all fields" -- which is how a declared
+        # `password` reaches a response even with the permission system
+        # working correctly. This does not consult permissions at all: the
+        # field name alone disqualifies it.
+        strip_sensitive_fields(
+            representation,
+            model_label=getattr(type(instance)._meta, "label", None),
+        )
+
         # AuditLog payload filtering using target model can_read
         try:
             if instance.__class__._meta.model_name.lower() == 'auditlog':
@@ -837,6 +853,12 @@ def model2serializer(model, fields=None, name_suffix=""):
         return None
     if fields is None:
         fields = [f.name for f in model._meta.fields]
+    # LEX-702: never auto-publish a credential-shaped column. Applied to
+    # caller-supplied lists too -- a project passing `fields` explicitly is
+    # just as able to name `password` as `model._meta.fields` was.
+    fields = filter_sensitive_field_names(
+        fields, model_label=getattr(model._meta, "label", None)
+    )
     model_name = model._meta.model_name.capitalize()
     class_name = (
         f"{model_name}{name_suffix.capitalize()}Serializer"

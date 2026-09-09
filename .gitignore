@@ -10,6 +10,12 @@ lex/_version.py
 build/
 /build
 
+# superpowers brainstorm scratch (visual companion mockups)
+.superpowers/
+
+# git worktrees (repo convention: .claude/worktrees/lex_<feature>)
+.claude/worktrees/
+
 # Written by the test suite itself, so an ordinary `lex pytest` run would
 # otherwise leave the working tree dirty -- and a `git add -A` then sweeps them
 # into a commit. `test_uploads/` comes from the serializers cluster's FileField

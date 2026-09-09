@@ -288,7 +288,7 @@ does not remove user launch configurations.
 | 1.275 | the session window outlasts a login | `--server.disconnectedSessionTTL` is passed and exceeds Streamlit's 120s default |
 | 1.276 | the CLI reports without blocking | the pre-flight warns about an undurable session key rather than refusing to start |
 
-**Scenario range:** 1.247 – 1.292. **Test file:** `lex/test_project/tests/init/test_1ad_proxy_assets_and_session_durability.py`. **Type:** U. **Status:** ✅ 46 pass, 33 subtests. **27 of the first 30 fail against the pre-fix tree**; 1.254, 1.255 and 1.271 pass by design as guards. Measured and explicitly not a cause: JWT validation at 0.045 ms/request — 16 ms across all 365 chunks. Recorded **BUG-029** (a pre-existing cluster-1 flake) while running this batch.
+**Scenario range:** 1.247 – 1.302. **Test file:** `lex/test_project/tests/init/test_1ad_proxy_assets_and_session_durability.py`. **Type:** U. **Status:** ✅ 56 pass, 42 subtests. **27 of the first 30 fail against the pre-fix tree**; 1.254, 1.255 and 1.271 pass by design as guards. Measured and explicitly not a cause: JWT validation at 0.045 ms/request — 16 ms across all 365 chunks. Recorded **BUG-029** (a pre-existing cluster-1 flake) while running this batch.
 
 | Scenario | Title | Asserts |
 | --- | --- | --- |
@@ -315,3 +315,28 @@ does not remove user launch configurations.
 | 1.292 | the localhost default is not promoted | `DOMAIN_HOSTED=localhost` trusts the shell's dev ports, not `https://localhost` |
 
 **Scenarios 1.287 – 1.290** exist because the earlier fixes created the gap between them: freezing the iframe `src` protects the Streamlit session but removed the only channel a renewed token had. Verified before fixing — an embedded session 401s past its bootstrap token's expiry with a valid renewal sitting unused in the shell.
+
+| Scenario | Title | Asserts |
+| --- | --- | --- |
+| 1.293 | a closed pooled connection is retried | a request after the upstream's keep-alive expiry succeeds on a fresh connection |
+| 1.294 | the pool expires before the upstream does | the proxy's keep-alive expiry undercuts uvicorn's 5s, and reaches the client |
+| 1.295 | an unreachable upstream answers 502 | `RemoteProtocolError` yields 502 on both the public and the authenticated path |
+
+**Scenarios 1.293 – 1.295** come from a production log rather than review: pooling connections is what made a stale one possible, and `RemoteProtocolError` escaped both existing handlers as an unhandled ASGI exception. `/media/...` is proxied, so the visible symptom was a document download that failed for no stated reason.
+
+| Scenario | Title | Asserts |
+| --- | --- | --- |
+| 1.296 | a failed request is logged at WARNING | a 404 asset and a 401 path both appear with method, path and status |
+| 1.297 | a successful asset stays quiet | suppressed by default, logged under `LEX_PROXY_ACCESS_LOG_STATIC` |
+| 1.298 | the log never carries the query string | `?auth_token=<jwt>` is recorded as `?<query>`, status preserved |
+| 1.299 | logging can be turned off | `LEX_PROXY_ACCESS_LOG=false` silences it without changing the response |
+
+**Scenarios 1.296 – 1.299** exist because the production log for the bug in 1.293–1.295 had **no access lines**, so an asset failure could not be told apart from an auth failure or a missing file without curling the live host afterwards.
+
+| Scenario | Title | Asserts |
+| --- | --- | --- |
+| 1.300 | Streamlit's control exceptions are not Exceptions | `StopException`/`RerunException` derive from `BaseException`, so `except Exception` misses them |
+| 1.301 | the stop flag survives a rerun | a read interrupted by either is "do not stop", and raises nothing |
+| 1.302 | a real stop flag is still obeyed | the guard swallows control exceptions, not the answer |
+
+**Scenarios 1.300 – 1.302** close the last live cause of the original report: the token refresher died on a script rerun, and a dead one is only replaced on the *next* run — so a rerun followed by idleness left nothing renewing the token. Found in a production log, which was only readable because 1.296–1.299 added the access log.

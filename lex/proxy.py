@@ -673,7 +673,7 @@ def validate_jwt_token(token: str) -> Optional[Dict[str, Any]]:
     try:
         signing_key = _get_signing_key(token)
         if not signing_key:
-            print("[proxy] JWT validation failed: no signing key")
+            logger.warning("JWT validation failed: no signing key available")
             return None
 
         client_id = os.getenv("OIDC_RP_CLIENT_ID", "")
@@ -694,10 +694,10 @@ def validate_jwt_token(token: str) -> Optional[Dict[str, Any]]:
         )
         return payload
     except jwt.ExpiredSignatureError:
-        print("[proxy] JWT token expired")
+        logger.info("JWT token expired")
         return None
     except jwt.InvalidTokenError as e:
-        print(f"[proxy] JWT validation failed: {e}")
+        logger.warning("JWT validation failed: %s", e)
         return None
 
 
@@ -1103,6 +1103,7 @@ def _upstream_http_client_kwargs(timeout: httpx.Timeout) -> Dict[str, Any]:
         "follow_redirects": False,
         "timeout": timeout,
         "trust_env": UPSTREAM_USE_SYSTEM_PROXY,
+        "limits": _UPSTREAM_LIMITS,
     }
 
 
@@ -1265,6 +1266,19 @@ async def ws_proxy(websocket: WebSocket):
 # reuses connections; streaming means the first byte leaves as soon as it
 # arrives.
 _UPSTREAM_TIMEOUT = httpx.Timeout(float(os.getenv("UPSTREAM_TIMEOUT_SECONDS", "30")))
+
+# Keep pooled connections for less time than the upstream will hold them open.
+# Streamlit runs behind uvicorn, whose keep-alive timeout is 5s: past that it
+# closes the socket, and a pooled connection handed out afterwards fails with
+# `RemoteProtocolError: Server disconnected without sending a response` before
+# a single byte is exchanged. Observed in production exactly 5s after the
+# previous request. Expiring first turns that race into a fresh connection.
+_UPSTREAM_KEEPALIVE_EXPIRY = float(os.getenv("UPSTREAM_KEEPALIVE_EXPIRY_SECONDS", "2"))
+_UPSTREAM_LIMITS = httpx.Limits(
+    max_connections=_env_int("UPSTREAM_MAX_CONNECTIONS", 100),
+    max_keepalive_connections=_env_int("UPSTREAM_MAX_KEEPALIVE", 20),
+    keepalive_expiry=_UPSTREAM_KEEPALIVE_EXPIRY,
+)
 _UPSTREAM_CLIENT: Optional[httpx.AsyncClient] = None
 _UPSTREAM_CLIENT_LOOP: Optional[Any] = None
 
@@ -1372,8 +1386,28 @@ async def _upstream_send(
     callers, so a stub here observes exactly the proxy's forwarding decisions.
     """
     client = await _get_upstream_client()
-    request = client.build_request(method, url, content=content, headers=headers)
-    return await client.send(request, stream=True)
+
+    # One retry, and only for failures that happen before any response byte
+    # exists. A pooled connection the upstream has already closed fails this
+    # way, and the request is safe to replay: `content` is bytes rather than a
+    # consumed stream, and nothing has been sent to our own client yet. A
+    # failure *during* the body is a different matter -- the response head has
+    # gone out, so it cannot be retried, and `_iter_upstream` raises instead.
+    last_error: Optional[Exception] = None
+    for attempt in (1, 2):
+        request = client.build_request(method, url, content=content, headers=headers)
+        try:
+            return await client.send(request, stream=True)
+        except (httpx.RemoteProtocolError, httpx.ConnectError, httpx.ReadError) as exc:
+            last_error = exc
+            if attempt == 2:
+                break
+            logger.info(
+                "Upstream connection failed before a response (%s: %s); retrying once on a "
+                "fresh connection", type(exc).__name__, exc,
+            )
+
+    raise last_error  # type: ignore[misc]  # unreachable unless both attempts failed
 
 
 async def _iter_upstream(upstream_resp: httpx.Response):
@@ -1518,6 +1552,17 @@ async def public_proxy(request: Request):
         )
     except httpx.TimeoutException:
         return JSONResponse({"error": f"Upstream timeout: {UPSTREAM}"}, status_code=504)
+    except httpx.HTTPError as exc:
+        # Anything else httpx can raise before a response exists -- notably
+        # RemoteProtocolError from a connection the upstream closed. Left
+        # unhandled it escaped as an unhandled ASGI exception, which reaches
+        # the browser as a dropped request: a failed /media download, or an
+        # iframe document that never loads.
+        logger.warning("Upstream request to %s failed: %s: %s", UPSTREAM, type(exc).__name__, exc)
+        return JSONResponse(
+            {"error": f"Upstream request failed: {type(exc).__name__}"},
+            status_code=502,
+        )
 
     return _build_proxied_response(request, upstream_resp)
 
@@ -1665,6 +1710,17 @@ async def proxy(request: Request):
         return JSONResponse(
             {"error": f"Upstream timeout: {UPSTREAM}"},
             status_code=504,
+        )
+    except httpx.HTTPError as exc:
+        # Anything else httpx can raise before a response exists -- notably
+        # RemoteProtocolError from a connection the upstream closed. Left
+        # unhandled it escaped as an unhandled ASGI exception, which reaches
+        # the browser as a dropped request: a failed /media download, or an
+        # iframe document that never loads.
+        logger.warning("Upstream request to %s failed: %s: %s", UPSTREAM, type(exc).__name__, exc)
+        return JSONResponse(
+            {"error": f"Upstream request failed: {type(exc).__name__}"},
+            status_code=502,
         )
 
     response = _build_proxied_response(request, upstream_resp)
@@ -2066,6 +2122,179 @@ def _warn_if_upstream_is_not_colocated() -> None:
     )
 
 
+# Theme relay
+# -----------------------------------------------------------------------------
+#: Storage key both origins agree on. Defined in lex/streamlit_theme.py so the
+#: relay and the Streamlit-side follower cannot drift apart; that module is pure
+#: stdlib, so importing it here costs nothing.
+from lex.streamlit_theme import THEME_STORAGE_KEY  # noqa: E402
+
+#: Origins allowed to drive this relay. The lex-app frontend, wherever it lives.
+_THEME_RELAY_ALLOWED = [
+    o.rstrip("/")
+    for o in (os.getenv("REACT_APP_URL"), os.getenv("LEX_FRONTEND_URL"))
+    if o
+] or ["http://localhost:8000"]
+
+_THEME_RELAY_HTML = """<!doctype html>
+<html><head><meta charset="utf-8"><title>lex theme relay</title></head>
+<body>
+<!--
+  Cross-origin theme relay.
+
+  localStorage is origin-scoped, so the lex-app frontend cannot write the
+  Streamlit origin's storage directly -- and without that, a STANDALONE
+  Streamlit window never learns the theme changed. postMessage only reaches
+  frames you hold a handle to, which a separate window is not.
+
+  This page is served from the Streamlit origin and embedded, hidden, by the
+  frontend. The frontend posts a mode to it; this writes it to storage HERE.
+  Because a storage write raises a `storage` event in every OTHER tab of the
+  same origin, every Streamlit tab -- embedded or standalone -- is notified,
+  with no server involved and no polling.
+-->
+<script>
+  var KEY = "__KEY__";
+  var ALLOWED = __ALLOWED__;
+
+  window.addEventListener("message", function (ev) {
+    if (ALLOWED.indexOf(ev.origin) === -1) return;           // only our frontend
+    var d = ev.data;
+    if (!d || d.type !== "lex-theme-set") return;
+    var mode = d.mode === "dark" ? "dark" : "light";
+    try {
+      // Writing the same value raises no storage event, so a repeat is a
+      // genuine no-op rather than a needless wake-up for every tab.
+      if (window.localStorage.getItem(KEY) !== mode) {
+        window.localStorage.setItem(KEY, mode);
+      }
+      // Answer so the caller knows the relay is alive and which value stuck.
+      ev.source.postMessage({ type: "lex-theme-ack", mode: mode }, ev.origin);
+    } catch (e) {
+      /* storage disabled (private mode, blocked cookies) -- degrade quietly */
+    }
+  });
+
+  // Announce readiness so the frontend can flush a mode queued before load.
+  try {
+    parent.postMessage({ type: "lex-theme-relay-ready" }, "*");
+  } catch (e) {}
+</script>
+</body></html>
+"""
+
+
+async def theme_relay(request: Request) -> Response:
+    """Serve the cross-origin theme relay.
+
+    Framed by the lex-app frontend so it can write THIS origin's storage. See
+    the comment inside the document for why that indirection is necessary.
+    """
+    body = _THEME_RELAY_HTML.replace("__KEY__", THEME_STORAGE_KEY).replace(
+        "__ALLOWED__", json.dumps(_THEME_RELAY_ALLOWED)
+    )
+    return HTMLResponse(
+        body,
+        headers={
+            # Must be framable by the frontend; that is its entire purpose.
+            "Content-Security-Policy": "frame-ancestors " + " ".join(_THEME_RELAY_ALLOWED),
+            # Static and tiny, but never stale: the allow-list is baked in.
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+# -----------------------------------------------------------------------------
+# Access logging: make a failed asset request visible
+# -----------------------------------------------------------------------------
+# There were no access-log lines at all in the production log that this was
+# written for, which is why a browser reporting "Failed to fetch dynamically
+# imported module" could not be traced to a status code. Two uvicorn servers
+# run in this process -- ours on 8501 and Streamlit's own on 8080 -- and Django
+# applies its own ``dictConfig`` afterwards, so whether ``uvicorn.access``
+# survives is not something this module can rely on.
+#
+# So it does not rely on it. This logs through the ``lex`` logger hierarchy,
+# which the same production log proves is configured and emitting, and it
+# chooses levels so the useful half is visible without the noise:
+#
+#   * 4xx/5xx at WARNING -- visible even when LEX_LOG_LEVEL is WARNING, which
+#     is the whole point: an asset that 401s or 404s must never again be
+#     invisible;
+#   * everything else at INFO, and a *successful* static asset not at all
+#     unless asked for. Streamlit eagerly preloads 107 chunks, so logging those
+#     would bury the line anyone actually needs.
+
+ACCESS_LOG_ENABLED = _env_bool("LEX_PROXY_ACCESS_LOG", True)
+#: Log successful static-asset responses too. Off by default: 107 lines per
+#: page load hides everything else. Turn on to confirm the bundle is serving.
+ACCESS_LOG_STATIC = _env_bool("LEX_PROXY_ACCESS_LOG_STATIC", False)
+
+access_logger = logging.getLogger("lex.proxy.access")
+
+
+class AccessLogMiddleware:
+    """Log one line per HTTP request, with the status the client actually got.
+
+    Pure ASGI rather than ``BaseHTTPMiddleware``: it must not buffer a
+    streaming response, and it must see the status even when the response is a
+    passthrough of Streamlit's own bytes.
+    """
+
+    def __init__(self, app) -> None:
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or not ACCESS_LOG_ENABLED:
+            await self.app(scope, receive, send)
+            return
+
+        started = time.monotonic()
+        status_holder = {"code": 0}
+
+        async def send_wrapper(message):
+            if message["type"] == "http.response.start":
+                status_holder["code"] = message["status"]
+            await send(message)
+
+        try:
+            await self.app(scope, receive, send_wrapper)
+        except Exception:
+            # An exception that escapes here is what the client sees as a
+            # dropped connection, so it is precisely what must be logged.
+            self._log(scope, 500, started, note="unhandled exception")
+            raise
+
+        self._log(scope, status_holder["code"], started)
+
+    def _log(self, scope, status: int, started: float, note: str = "") -> None:
+        path = scope.get("path", "")
+        is_static = path.startswith(f"{STREAMLIT_BASE_URL_PATH}/static/")
+        failed = status >= 400
+
+        if not failed and is_static and not ACCESS_LOG_STATIC:
+            return
+
+        elapsed_ms = (time.monotonic() - started) * 1000
+        query = scope.get("query_string", b"")
+        # `auth_token` is a credential; never write one to a log.
+        suffix = "?<query>" if query else ""
+        message = "%s %s%s -> %d (%.0fms)%s"
+        args = (
+            scope.get("method", "?"),
+            path,
+            suffix,
+            status,
+            elapsed_ms,
+            f" {note}" if note else "",
+        )
+
+        if failed:
+            access_logger.warning(message, *args)
+        else:
+            access_logger.info(message, *args)
+
+
 # -----------------------------------------------------------------------------
 # Routing / app
 # -----------------------------------------------------------------------------
@@ -2074,6 +2303,8 @@ if SERVE_STATIC_LOCALLY:
     _warn_if_upstream_is_not_colocated()
 
 routes = [
+    # Before the catch-all proxy, or it would be forwarded upstream to Streamlit.
+    Route("/_lex/theme-relay", theme_relay, methods=["GET"]),
     Route("/auth/login", login, methods=["GET"]),
     Route("/auth/callback", auth_callback, methods=["GET"]),
     Route("/oauth2/logout", oauth2_logout, methods=["GET"]),
@@ -2124,3 +2355,7 @@ app.add_middleware(
     minimum_size=STATIC_GZIP_MIN_SIZE,
     compresslevel=STATIC_GZIP_LEVEL,
 )
+
+# Outermost of all, so the status it records is the one the client received --
+# after gzip, after the session middleware, and including anything those raise.
+app.add_middleware(AccessLogMiddleware)

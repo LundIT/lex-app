@@ -14,6 +14,31 @@ import streamlit as st
 import streamlit.components.v1 as components
 from streamlit.runtime.scriptrunner import add_script_run_ctx, get_script_run_ctx
 
+from lex.lex_app.streamlit.eager_frames import eager_frames_js
+from lex.lex_app.streamlit.quackback import quackback_launcher_js
+from lex.lex_app.streamlit.sidebar import (
+    HIDE_SIDEBAR_CSS,
+    embedded_in_lex_app,
+    hide_sidebar_when_framed_js,
+    render_account,
+    render_logo,
+)
+from lex.streamlit_theme import (
+    DEBUG_PANEL_HEIGHT,
+    embed_theme_from_params,
+    theme_debug_enabled,
+    theme_follow_enabled,
+    theme_follower_html,
+)
+try:  # Streamlit >= 1.55 moved these; older layouts kept them under scriptrunner.
+    from streamlit.runtime.scriptrunner_utils.exceptions import ScriptControlException
+except ImportError:  # pragma: no cover - defensive across Streamlit versions
+    try:
+        from streamlit.runtime.scriptrunner.exceptions import ScriptControlException
+    except ImportError:
+        class ScriptControlException(BaseException):  # type: ignore[no-redef]
+            """Fallback so the handlers below still have something to catch."""
+
 logger = logging.getLogger(__name__)
 log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -294,8 +319,42 @@ def _session_is_live(session_id: str) -> bool:
         return True
 
 
+def _read_stop_flag(stop_key: str) -> bool:
+    """Read the stop flag without letting Streamlit's control flow kill the thread.
+
+    The refresher carries a script run context so it can reach
+    ``st.session_state`` at all. The cost is that a read goes through
+    ``SafeSessionState``, which raises ``StopException`` or ``RerunException``
+    to interrupt *the script* -- and both derive from ``BaseException``, so an
+    ``except Exception`` guard does not catch them. Observed in production:
+
+        Exception in thread token_refresher:
+          File "lex/streamlit_app.py", line 298, in _refresher_should_stop
+            return bool(st.session_state.get(stop_key, False)) ...
+        streamlit.runtime.scriptrunner_utils.exceptions.StopException
+
+    The thread then died. ``start_token_refresh_thread_if_needed`` replaces a
+    dead one, but only on the *next script run* -- so if the user's last
+    interaction is what killed it and they then leave the tab idle, there is no
+    further run, nothing restarts it, and the session expires on the access
+    token's own lifetime. That is precisely the "left it open, came back, it
+    was dead" report the refresher exists to prevent, and it is why the failure
+    looks intermittent: it needs a rerun followed by idleness.
+
+    A rerun is completely ordinary, so it must never end the refresher: treat
+    an unreadable flag as "not set" and let ``_session_is_live`` remain the
+    authority on whether to stop.
+    """
+    try:
+        return bool(st.session_state.get(stop_key, False))
+    except ScriptControlException:
+        return False
+    except Exception:
+        return False
+
+
 def _refresher_should_stop(session_id: str, stop_key: str) -> bool:
-    return bool(st.session_state.get(stop_key, False)) or not _session_is_live(session_id)
+    return _read_stop_flag(stop_key) or not _session_is_live(session_id)
 
 
 def _seconds_until_renewal() -> int:
@@ -346,6 +405,14 @@ def _token_refresher(session_id: str, stop_key: str = "stop_token_refresher") ->
                     return
                 time.sleep(min(RENEW_POLL_SECONDS, backoff - slept))
                 slept += RENEW_POLL_SECONDS
+    except ScriptControlException:
+        # A rerun or a stop interrupted a session-state access somewhere in the
+        # loop. The *session* is fine -- only this script run ended -- so
+        # exiting would silently stop renewal for a tab that is still open.
+        # Hand off to a fresh thread instead; the next script run restarts one.
+        log.debug(
+            "Token refresher for session %s interrupted by a script rerun", session_id or "?"
+        )
     except Exception as e:
         # Session state torn down from under us, or an unexpected fault. Exiting
         # is right: a thread that cannot reach its session has nothing to renew.
@@ -540,11 +607,12 @@ def handle_logout_landing() -> None:
         st.stop()
 
 
-def render_logout_link() -> None:
-    """
-    Form-safe logout control:
-    - Not a Streamlit widget (so it won't break inside st.form()).
-    - Works regardless of whatever streamlit_structure.main() renders.
+def _logout_href() -> str:
+    """Where the log-out control points.
+
+    Split out from the old ``render_logout_link`` so the URL and the markup are
+    separate concerns: the account block at the bottom of the sidebar now owns
+    the rendering, and only needs the destination.
     """
     base_url = _current_base_url()
     base_path = _base_path()
@@ -555,24 +623,9 @@ def render_logout_link() -> None:
 
     auth_method = st.session_state.get("auth_method", "session")
     if auth_method == "session":
-        href = f"{base_path}/oauth2/sign_out?rd={rd}"
-    else:
-        # JWT: we can't revoke upstream header; just clear local session_state on landing
-        href = f"{base_path}/?logout=1"
-
-    st.sidebar.markdown(
-        f"""
-        <a href="{href}" target="_top" style="
-            display:inline-block;
-            padding:0.45rem 0.8rem;
-            border-radius:0.5rem;
-            border:1px solid rgba(49,51,63,0.25);
-            text-decoration:none;
-            font-weight:600;
-        ">Logout</a>
-        """,
-        unsafe_allow_html=True,
-    )
+        return f"{base_path}/oauth2/sign_out?rd={rd}"
+    # JWT: we cannot revoke upstream; just clear local session_state on landing.
+    return f"{base_path}/?logout=1"
 
 
 def _within_renewal_grace() -> bool:
@@ -779,6 +832,93 @@ def reset_streamlit_form_context() -> None:
 # -------------------------
 # App bootstrap
 # -------------------------
+# The bootstrap CALLS moved into `if __name__ == "__main__":` on lex-app-v2.
+# What stays out here are the definitions that block uses.
+
+def _url_embed_theme() -> str:
+    """The mode this page's own URL asks for, or "" if it asks for nothing.
+
+    Thin adapter over :func:`lex.streamlit_theme.embed_theme_from_params` -- the
+    parsing lives there so it is reachable by tests, which cannot import this
+    module (it runs auth and calls ``st.stop()`` at import time).
+    """
+    raw = st.query_params.get_all("embed_options") if hasattr(st.query_params, "get_all") else []
+    if not raw:
+        single = st.query_params.get("embed_options")
+        raw = single if isinstance(single, list) else ([single] if single else [])
+    return embed_theme_from_params(raw)
+
+
+def render_theme_follower() -> None:
+    """Emit the zero-height block that follows theme changes made in lex-app.
+
+    The relay in ``lex/proxy.py`` writes the agreed mode into THIS origin's
+    localStorage, raising a ``storage`` event in every Streamlit tab -- embedded
+    or standalone. The script that reacts to it lives in
+    :func:`lex.streamlit_theme.theme_follower_html`, which documents why the
+    reaction is a reload and what stops it firing needlessly.
+    """
+    import streamlit.components.v1 as components
+
+    # Theme following is OPT-IN. It works by reloading with
+    # ?embed_options=<mode>_theme, which sits at the top of Streamlit's own
+    # precedence — above the stored theme and above Streamlit's theme menu. A
+    # page that follows has therefore lost its theme control: the menu stops
+    # working and the app file cannot override it either, because a query
+    # parameter is not something app code gets a say in. Worth it when someone
+    # asked the two surfaces to match; not worth imposing by default.
+    follow = theme_follow_enabled()
+    debug = follow and theme_debug_enabled()
+
+    # The eager-frames script is unconditional: it is about WHEN component
+    # frames load, and has nothing to do with the theme.
+    body = f"<script>{eager_frames_js()}</script>"
+    # Unconditional too, and for the same reason: whether this page is inside
+    # someone's frame is not a theme question. It is the fallback for the
+    # parameter above, which is exact and flash-free but only once the frontend
+    # that sends it has shipped -- framing is knowable without anyone's help.
+    body = hide_sidebar_when_framed_js() + body
+
+    # The feedback launcher, and it decides for itself whether to appear: a
+    # framed Streamlit page must not stack a second one over lex-app's, and only
+    # the browser knows whether this page is framed. Unconditional here for the
+    # same reason the two scripts above are -- whose chrome this page sits
+    # inside is not a theme question.
+    try:
+        from lex.lex_app.streamlit.embed import _resolve_base_url
+
+        body = quackback_launcher_js(_resolve_base_url()) + body
+    except Exception:
+        # A missing launcher is a missing feedback button; a raise here would
+        # take the whole page down with it.
+        logger.warning("Could not mount the feedback launcher", exc_info=True)
+    if follow:
+        body = theme_follower_html(_url_embed_theme(), debug=debug) + body
+
+    components.html(body, height=DEBUG_PANEL_HEIGHT if debug else 0)
+
+
+# Form-safe logout control (won't break no matter what streamlit_structure.main() does).
+#
+# Only DECIDED here; rendered after the app structure, in the `finally` at the
+# bottom of this file. Streamlit lays the sidebar out in call order, so
+# rendering it here pinned it to the top — above the app's own navigation, which
+# is the wrong place for a logout. Rendering it last puts it at the bottom.
+#
+# The `finally` is what preserves the original guarantee: the control still
+# appears even if streamlit_structure.main() raises.
+_logout_qp = st.query_params.get("is_logout_enabled")
+LOGOUT_ENABLED = _logout_qp is None or str(_logout_qp).lower() not in (
+    "0",
+    "false",
+    "no",
+    "n",
+    "off",
+)
+
+# -------------------------
+# Main app
+# -------------------------
 if __name__ == "__main__":
     init_session_state()
 
@@ -800,18 +940,37 @@ if __name__ == "__main__":
         render_session_recovery()
         st.stop()
 
-    # Form-safe logout control (won't break no matter what streamlit_structure.main() does)
-    _logout_qp = st.query_params.get("is_logout_enabled")
-    if _logout_qp is None or str(_logout_qp).lower() not in ("0", "false", "no", "n", "off"):
-        render_logout_link()
-
     from lex.lex_app.settings import repo_name
+
+    # ── Framed by lex-app: no sidebar at all ────────────────────────────
+    # Not "collapsed", and not "empty" -- gone. lex-app already draws a sidenav,
+    # the logo, the signed-in user and a way out, immediately to the left of this
+    # frame. A second sidebar inside it is the same furniture twice, and the
+    # inner one navigates a different app.
+    #
+    # Decided here rather than in CSS alone so the chrome is never BUILT: a
+    # hidden logo is still an st.logo call, and a hidden account block still
+    # renders a display name into the page. A guest surface should not construct
+    # host furniture, not merely avoid showing it.
+    #
+    # Read BEFORE the try, because the `finally` below consults it. Computing it
+    # inside would mean an early failure in main() raised NameError from the
+    # cleanup path and buried the real error underneath it.
+    EMBEDDED = embedded_in_lex_app(st.query_params)
 
     try:
         try:
             exec(f"import {repo_name}._streamlit_structure as streamlit_structure")
         except Exception:
             streamlit_structure = None
+
+        if EMBEDDED:
+            st.markdown(HIDE_SIDEBAR_CSS, unsafe_allow_html=True)
+        else:
+            # The logo only, and early: st.logo renders into Streamlit's header
+            # slot, which sits ABOVE even the page navigation. Who is signed in
+            # goes to the bottom instead -- see the `finally` below.
+            render_logo(st)
 
         reset_streamlit_form_context()
         params = st.query_params
@@ -869,3 +1028,23 @@ if __name__ == "__main__":
         else:
             with st.expander(":red[An error occurred while trying to load the app.]"):
                 st.error(traceback.format_exc())
+
+    finally:
+        # Rendered last so it sits at the BOTTOM of the sidebar, beneath the
+        # app's own navigation. In `finally` so a failure in main() still leaves
+        # the user a way out -- the property the original placement was
+        # protecting by rendering first.
+        # Identity and the way out, together and last, so they sit at the
+        # bottom beneath whatever navigation the app declared. In `finally` so a
+        # failure in main() still leaves the user a way out.
+        if not EMBEDDED:
+            render_account(
+                st,
+                st.session_state,
+                logout_href=_logout_href() if LOGOUT_ENABLED else None,
+            )
+
+        # Zero-height and inert; also in `finally` so theme following survives a
+        # failure in main(). A page stuck on the wrong theme after an error is a
+        # small thing, but it is free to avoid.
+        render_theme_follower()

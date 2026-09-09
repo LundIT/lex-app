@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>lex widgets</title>
+
+    <!--
+      A separate entry point, deliberately.
+
+      The widget host used to be a route inside the admin SPA, so a Calculate
+      button downloaded and parsed the whole application: AG Grid Enterprise, ten
+      ra-* enterprise packages, moment, a markdown editor — one ~6 MB chunk,
+      because `src/index.tsx` imports ag-grid at the entry and every <Resource>
+      pulls in its list and form components. Route-level code splitting cannot
+      reach that: the entry runs before any route is matched.
+
+      This page loads `src/embed-main.tsx` instead, which mounts the widgets in
+      <AdminContext> alone. Same origin, same bundle cache, a fraction of the
+      code.
+
+      Served as a real file — `serve_react` returns any existing file before
+      falling back to the SPA shell — so this needs no route of its own.
+    -->
+    <script type="text/javascript" src="/config.js"></script>
+
+    <script>
+      /*
+       * Am I framed? Same answer, same place, same reason as index.html: the
+       * `data-framed` attribute drives the rule in App.css that stops the app
+       * painting its own background, and it must be set before the stylesheet
+       * applies or the widget flashes grey over the host's surface on load.
+       *
+       * Structural rather than URL-derived, so it cannot go stale. A
+       * cross-origin parent throws on access, which itself proves we are framed.
+       */
+      ;(function () {
+        var framed
+        try {
+          framed = window.self !== window.top
+        } catch (e) {
+          framed = true
+        }
+        if (framed) document.documentElement.setAttribute('data-framed', 'true')
+        // No Quackback launcher on this page at all — see below.
+        window.__lexQuackbackAllowed = false
+      })()
+    </script>
+
+    <!--
+      index.html's Quackback launcher block is intentionally absent rather than
+      copied and gated. It is gated there on `window.self !== window.top`, and
+      this page exists only to be framed, so every line of it would be dead:
+      no SDK fetch, no /api/quackback-widget-token POST, no bubble. Carrying a
+      block that can never run is how it eventually gets un-gated by accident.
+    -->
+    <script type="module" crossorigin src="/assets/embed-CCZwn8AA.js"></script>
+    <link rel="modulepreload" crossorigin href="/assets/SessionAuthGate-BB6V9OL2.js">
+    <link rel="stylesheet" crossorigin href="/assets/SessionAuthGate-Cpfxv-bc.css">
+  </head>
+  <body>
+    <noscript>You need to enable JavaScript to run this app.</noscript>
+    <div id="root"></div>
+  </body>
+</html>

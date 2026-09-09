@@ -1,0 +1,228 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>lex widget host bridge</title>
+  <style>
+    html, body { margin: 0; padding: 0; background: transparent; }
+    #frame { display: block; width: 100%; border: 0; }
+  </style>
+</head>
+<body>
+  <!--
+    Streamlit Custom Component frontend for lex_widgets().
+
+    Responsibilities:
+      1. Mount ONE iframe pointed at the lex-app widget host route.
+      2. Hand it the manifest once it reports ready.
+      3. Grow the Streamlit frame to whatever height the host reports, so a tall
+         log tree and its modal are not clipped inside a fixed box.
+      4. Forward calculation_status envelopes back to Python.
+
+    One iframe per page, not per widget: a dashboard of thirteen calculations
+    used to mean thirteen React runtimes and four WebSockets each. The manifest
+    exists so all of them share one runtime.
+
+    Dependency-free on purpose — no build step, so it ships as a static asset
+    inside the wheel.
+  -->
+  <!-- loading="eager" is explicit rather than relied upon: the HTML default is
+       eager, but browsers ship lazy heuristics for offscreen frames and a widget
+       that only loads once scrolled to is the complaint this states away. -->
+  <iframe id="frame" loading="eager"
+          sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads"></iframe>
+
+  <script>
+    // ── Streamlit bridge shim (the public postMessage protocol) ──────────
+    const Streamlit = (function () {
+      const RENDER_EVENT = "streamlit:render";
+      function _post(type, payload) {
+        window.parent.postMessage(Object.assign({ isStreamlitMessage: true, type }, payload || {}), "*");
+      }
+      return {
+        RENDER_EVENT,
+        setComponentReady() { _post("streamlit:componentReady", { apiVersion: 1 }); },
+        setComponentValue(value) { _post("streamlit:setComponentValue", { value, dataType: "json" }); },
+        setFrameHeight(height) { _post("streamlit:setFrameHeight", { height }); },
+        events: {
+          addEventListener(type, cb) {
+            window.addEventListener("message", (ev) => {
+              const d = ev.data || {};
+              if (d.type === type) cb({ detail: d });
+            });
+          },
+        },
+      };
+    })();
+
+    const PROTOCOL_VERSION = 1;
+    const SOURCE_TAG = "lex-app";
+
+    let _expectedOrigin = null;
+    // Supplied by Python so the key has ONE definition (lex/streamlit_theme.py);
+    // a drifted copy here would fail silently -- the write simply wakes nobody.
+    let _themeStorageKey = null;
+    let _manifest = null;
+    let _hostReady = false;
+    let _rendered = false;
+    let _lastEventId = null;
+    let _lastHeight = 0;
+
+    function sendManifest() {
+      if (!_hostReady || !_manifest) return;
+      const frame = document.getElementById("frame");
+      // Target the iframe's own origin, never "*" — the manifest names records
+      // the user may see, and a wildcard would leak it to any document that
+      // happened to be framed here.
+      frame.contentWindow.postMessage(
+        { source: "lex-app-host", version: PROTOCOL_VERSION, type: "manifest", payload: _manifest },
+        _expectedOrigin || "*"
+      );
+    }
+
+    // ── The theme, straight from Streamlit ───────────────────────────────
+    // Streamlit hands every declared component its resolved theme in the RENDER
+    // event -- `{base: "light"|"dark", backgroundColor, textColor, ...}` -- and
+    // re-fires it whenever the theme changes, live, with no reload.
+    //
+    // This shim has listened for RENDER since it was written, read `args`, and
+    // thrown `theme` away. Everything the theme sync used to do -- a follower
+    // reading storage, a cross-origin relay iframe, an oscillation ledger, a
+    // page reload -- was reconstructing, badly, a value that was already being
+    // handed over on every render.
+    let _mode = null;
+
+    function publishTheme(theme) {
+      const base = theme && theme.base;
+      if (base !== "light" && base !== "dark") return;
+      if (base === _mode) return;
+      _mode = base;
+
+      // Tell the page, so the driver knows what is actually showing without
+      // having to infer it from storage.
+      try { window.parent.__lexThemeCurrent = base; } catch (e) {}
+
+      sendTheme();
+    }
+
+    function sendTheme() {
+      if (!_hostReady || !_mode) return;
+      const frame = document.getElementById("frame");
+      if (!frame || !frame.contentWindow) return;
+      frame.contentWindow.postMessage(
+        { source: "lex-app-host", version: PROTOCOL_VERSION, type: "theme",
+          payload: { mode: _mode } },
+        _expectedOrigin || "*"
+      );
+    }
+
+    // ── Lifecycle: render ────────────────────────────────────────────────
+    Streamlit.events.addEventListener(Streamlit.RENDER_EVENT, (ev) => {
+      const args = (ev.detail && ev.detail.args) || {};
+      publishTheme(ev.detail && ev.detail.theme);
+      // A rerun is a free chance to re-check the agreement. The page may have
+      // drifted from it -- theme changed in Streamlit's own menu, or a drive()
+      // that timed out -- and a drift can never be corrected by a storage event,
+      // because the agreed value has not changed.
+      try {
+        if (typeof window.parent.__lexThemeReconcile === "function") {
+          window.parent.__lexThemeReconcile();
+        }
+      } catch (e) {}
+      _expectedOrigin = args.expected_origin || null;
+      _themeStorageKey = args.theme_storage_key || null;
+      _manifest = args.manifest || null;
+
+      const frame = document.getElementById("frame");
+      const url = args.url;
+
+      // Navigate only on first render or a genuine URL change. Streamlit
+      // re-fires RENDER on every rerun, and re-pointing src would reload the
+      // React app — the whole point of one persistent runtime is lost if the
+      // runtime is torn down every rerun.
+      if (!_rendered || frame.dataset.url !== url) {
+        frame.src = url;
+        frame.dataset.url = url;
+        _rendered = true;
+        _hostReady = false;   // the new document has not reported ready yet
+      }
+
+      // A rerun may carry a changed manifest for an already-ready host.
+      sendManifest();
+      sendTheme();
+
+      if (!_lastHeight) {
+        const initial = args.min_height || 200;
+        frame.style.height = initial + "px";
+        Streamlit.setFrameHeight(initial);
+      }
+    });
+
+    // ── Inbound: widget host → Streamlit ─────────────────────────────────
+    window.addEventListener("message", (ev) => {
+      const data = ev.data;
+      if (!data || typeof data !== "object") return;
+      if (data.source !== SOURCE_TAG) return;
+
+      // Origin gate. Null only during local dev where the Python side could
+      // not resolve a real origin; in production it is always set.
+      if (_expectedOrigin && ev.origin !== _expectedOrigin) return;
+
+      if (typeof data.version === "number" && data.version > PROTOCOL_VERSION) {
+        console.warn("[lex_widgets] dropping envelope with unsupported version", data.version);
+        return;
+      }
+
+      if (data.type === "widget_host_ready") {
+        _hostReady = true;
+        sendManifest();
+        sendTheme();
+        return;
+      }
+
+      if (data.type === "resize") {
+        const h = Math.max(0, Number((data.payload || {}).height) || 0);
+        // Ignore sub-pixel churn: ResizeObserver fires generously and every
+        // setFrameHeight costs a Streamlit round trip.
+        if (h && Math.abs(h - _lastHeight) > 2) {
+          _lastHeight = h;
+          document.getElementById("frame").style.height = h + "px";
+          Streamlit.setFrameHeight(h);
+        }
+        return;
+      }
+
+      if (data.type === "open_log") {
+        // A click, so never deduped by value -- the envelope id already carries
+        // a timestamp so asking twice re-opens.
+        Streamlit.setComponentValue(data);
+        return;
+      }
+
+      if (data.type === "theme") {
+        // Ignored, deliberately, and kept as a branch so an older widget bundle
+        // reporting upward is dropped rather than falling through to the
+        // unknown-envelope warning.
+        //
+        // The direction is now one-way: Streamlit tells this shim the theme in
+        // its RENDER event, and the shim tells the frame. A frame reporting its
+        // own palette back up is what used to fight the page -- it could not see
+        // lex-app's real preference across a site boundary, so it announced a
+        // default and the two argued until something reloaded.
+        return;
+      }
+
+      if (data.type === "calculation_status") {
+        // Re-run dedupe: Streamlit may re-render while the same envelope is
+        // still the current value, and forwarding twice re-triggers the
+        // author's branch.
+        if (data.id && data.id === _lastEventId) return;
+        _lastEventId = data.id || null;
+        Streamlit.setComponentValue(data);
+      }
+    });
+
+    Streamlit.setComponentReady();
+  </script>
+</body>
+</html>

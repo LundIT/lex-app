@@ -1,4 +1,28 @@
+## [2.2.0] - 2026-09-08
+
+> **Frontend changes for this release are not yet recorded.**
+
+### Changed
+- **backend** Record the PAC commit the shipped bundle was built from ([d277308c](https://github.com/ExcellenceCloudGmbH/lex-app/commit/d277308c)) (#757)
+- **backend** Four backend fixes: a credential leak, and three contracts the frontend was already ready for ([ef9ed850](https://github.com/ExcellenceCloudGmbH/lex-app/commit/ef9ed850)) (#756)
+- **backend** Fix NameError that stops lex streamlit starting ([588cbe72](https://github.com/ExcellenceCloudGmbH/lex-app/commit/588cbe72)) (#755)
+- **backend** Streamlit widget host: one flat lex_* call per widget, theme sync, and log export ([7f34d409](https://github.com/ExcellenceCloudGmbH/lex-app/commit/7f34d409)) (#754)
+
+## [2.1.11] - 2026-09-06
+
+> **Frontend changes for this release are not yet recorded.**
+
+### Fixed
+- **backend** callable XLSX report helpers, and the max_length that never applied ([b1dfa006](https://github.com/ExcellenceCloudGmbH/lex-app/commit/b1dfa006)) (#753)
+- **backend** stop a script rerun killing the token refresher ([ee525c43](https://github.com/ExcellenceCloudGmbH/lex-app/commit/ee525c43)) (#752)
+
+## [2.1.10] - 2026-09-04
+
+> **Frontend changes for this release are not yet recorded.**
+
 ## [2.1.9] - 2026-09-04
+
+> **Frontend changes for this release are not yet recorded.**
 
 ### Added
 - **backend** give the drafter the context the backfill needed ([9633952a](https://github.com/ExcellenceCloudGmbH/lex-app/commit/9633952a)) (#742)
@@ -7,20 +31,11 @@
 - **backend** frontend provenance, gap recovery and backfill ([393f9298](https://github.com/ExcellenceCloudGmbH/lex-app/commit/393f9298)) (#732)
 
 ### Fixed
+- **backend** derive the session key from DJANGO_SECRET_KEY, and stop refusing to boot ([148d1283](https://github.com/ExcellenceCloudGmbH/lex-app/commit/148d1283)) (#751)
 - **backend** the 401 flood, the slow cold start and the dynamic-import TypeErrors are one bug ([b7c1478a](https://github.com/ExcellenceCloudGmbH/lex-app/commit/b7c1478a)) (#750)
 - **backend** ignore client-admin and purge stale ignored-role policies (LEX-5) ([25c4429a](https://github.com/ExcellenceCloudGmbH/lex-app/commit/25c4429a)) (#726)
 - **backend** stop a rejected draft passing as a success ([37afacea](https://github.com/ExcellenceCloudGmbH/lex-app/commit/37afacea)) (#739)
 - **backend** draft from PR bodies, and stop announcing our toolchain as a feature ([3e152ae8](https://github.com/ExcellenceCloudGmbH/lex-app/commit/3e152ae8)) (#702)
-
-# Changelog
-
-Every notable change, tagged **backend** (this repository) or **frontend**
-(`process-admin-general-client`, which ships as a compiled bundle).
-
-Reconstructed 2026-09-03 for releases 2.1.1–2.1.9. Frontend ranges come from the provenance
-side-car: each pre-manifest bundle was matched to its source revision by rebuilding the
-candidate and comparing the content-addressed output, so the attribution is proven rather
-than inferred. Commits whose entire diff is the vendored bundle are omitted, as are merges.
 
 ## [2.1.8] - 2026-08-25
 

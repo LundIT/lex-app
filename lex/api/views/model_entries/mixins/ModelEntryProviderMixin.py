@@ -7,13 +7,40 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework_api_key.permissions import HasAPIKey
 
 
+# LEX-702. What the UI legitimately needs to DISPLAY a user: a name to put
+# on an audit row, a history entry, a created_by / edited_by column or an FK
+# hover card. Nothing here is a credential and nothing here is a privilege
+# flag.
+USER_DISPLAY_FIELDS = ("id", "username", "first_name", "last_name", "email")
+
+
 class UserModelSerializer(serializers.ModelSerializer):
+    """Read-only display projection of the user table.
+
+    An ALLOWLIST, not `__all__` minus a few names, and that distinction is
+    the fix. LEX-702: `fields = "__all__"` on `auth.User` published the
+    Django password hash, and this serializer is reached by
+    `issubclass(model_class, User)` -- so a project's own user model lands
+    here too and `__all__` would publish whatever columns it adds. An
+    allowlist makes a new column invisible until someone chooses to expose
+    it; a denylist makes it public until someone remembers to hide it.
+
+    Note also what this class is NOT: a `LexSerializer`. It therefore never
+    runs the can_read / permission_read visibility filter, which is why the
+    permission system was working correctly and the hash still went out. The
+    field list is the only thing standing between this table and the wire.
+
+    `is_staff` / `is_superuser` are excluded on purpose. They are not
+    secrets, but publishing them next to a user list tells an attacker which
+    account is worth attacking first, and no frontend surface reads them.
+    """
+
     id_field = serializers.ReadOnlyField(default=User._meta.pk.name)
     short_description = serializers.SerializerMethodField()
 
     class Meta:
         model = User
-        fields = "__all__"
+        fields = ("id_field", "short_description") + USER_DISPLAY_FIELDS
 
     def get_short_description(self, obj):
         return f"{obj.first_name} {obj.last_name} - {obj.email}"

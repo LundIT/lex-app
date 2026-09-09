@@ -34,6 +34,10 @@ Lex App reads its runtime configuration from environment variables — usually l
 | `STATIC_GZIP_MIN_SIZE` / `STATIC_GZIP_LEVEL` | Compression floor and zlib level for served assets. Defaults `500` and `6`. |
 | `JWKS_CACHE_TTL` / `JWKS_RETRY_BACKOFF_SECONDS` | How long Keycloak's signing keys are cached (default `3600`), and how long to wait before retrying a failed refresh while continuing to serve the cached keys (default `30`). |
 | `UPSTREAM_TIMEOUT_SECONDS` | Timeout for the proxy's requests to Streamlit. Default `30`. |
+| `UPSTREAM_KEEPALIVE_EXPIRY_SECONDS` | How long the proxy keeps a pooled connection to Streamlit. Default `2`, deliberately below uvicorn's 5s keep-alive timeout: past that the upstream closes the socket, and reusing it fails before a byte is exchanged. Raise only if you have changed the upstream's keep-alive. |
+| `UPSTREAM_MAX_CONNECTIONS` / `UPSTREAM_MAX_KEEPALIVE` | Connection-pool bounds for upstream requests. Defaults `100` / `20`. |
+| `LEX_PROXY_ACCESS_LOG` | `true` (default) to log one line per request through the auth proxy. Failures (4xx/5xx) are logged at WARNING so they are visible even at `LEX_LOG_LEVEL=WARNING`; the query string is never written out, since the embedded dashboard's bootstrap URL carries an access token. |
+| `LEX_PROXY_ACCESS_LOG_STATIC` | `true` to log *successful* static-asset responses too. Off by default because Streamlit preloads over a hundred chunks per page load. Turn it on to confirm the asset bundle is serving. |
 
 ## Keycloak / OIDC
 
