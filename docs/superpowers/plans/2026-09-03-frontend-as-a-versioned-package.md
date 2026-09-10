@@ -713,7 +713,7 @@ jobs:
             fi
             printf 'Wheel contents:\n\n```\n'
             ls -la packaging/dist 2>/dev/null || printf '(no dist)\n'
-            printf '```\n\nPin in lex-app with:\n\n```\nlex-frontend==%s\n```\n' \
+            printf '```\n\nPin in lex-app with:\n\n```\nlex-app-frontend==%s\n```\n' \
               "${{ steps.version.outputs.value }}"
           } >> "$GITHUB_STEP_SUMMARY"
 ```
@@ -1133,7 +1133,7 @@ REQUIREMENTS = "requirements.txt"
 def test_the_pinned_version_is_read_from_requirements_at_a_ref():
     def show(ref, path):
         assert path == REQUIREMENTS, f"read the wrong file: {path}"
-        return "django==5.0\nlex-frontend==1.10.0\ncelery==5.3\n"
+        return "django==5.0\nlex-app-frontend==1.10.0\ncelery==5.3\n"
 
     assert ranges.frontend_version_at("v2.2.0", show=show) == "1.10.0"
 
@@ -1157,7 +1157,7 @@ def test_a_loose_specifier_is_not_treated_as_provenance():
 def test_a_commented_out_pin_is_ignored():
     # A commented pin is not a dependency, and reading it would attribute a
     # release to a frontend it does not ship.
-    show = lambda ref, path: "# lex-app-frontend==9.9.9\nlex-frontend==1.10.0\n"
+    show = lambda ref, path: "# lex-app-frontend==9.9.9\nlex-app-frontend==1.10.0\n"
     assert ranges.frontend_version_at("v2.2.0", show=show) == "1.10.0"
 
 
