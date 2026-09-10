@@ -1,20 +1,60 @@
 # Documentation figures, declared once and rebuilt from the live product.
 #
+#   # 1. capture, from the frontend repo (process-admin-general-client):
+#   LEX_DOCSHOT_DIR=<path>/docs/shots npx playwright test docshots.spec.ts
+#
+#   # 2. render, from here:
 #   python -m docshots build docs/figures.yml --out ../lex-app-docs/content/images
-#   python -m docshots build docs/figures.yml --check      # CI: fail if the product moved
+#   python -m docshots build docs/figures.yml --check     # CI: fail if the product moved
 #
 # Two kinds of source:
 #   terminal:  a command that is actually run, its output captured
-#   shot:      a JSON+PNG pair written by the Playwright helper in
-#              process-admin-general-client (e2e/helpers/docshot.ts)
+#   shot:      a JSON+PNG pair written by e2e/helpers/docshot.ts in the
+#              frontend repo, which records a bounding box per named locator
 #
 # `anchors` name the things worth pointing at — a regex over the command's
 # plain output, or (for a browser shot) a CSS selector resolved at capture
 # time. `callouts` say what to write about them. When an anchor stops
-# resolving the build fails, which is the whole point: a renamed button
+# resolving the build fails, which is the whole point: a renamed control
 # breaks the docs on the pull request that renamed it.
+#
+# Captions are numbered in reading order and listed under the picture; the
+# marks sit in a lane beside it. Nothing is drawn over the screenshot.
 
 figures:
+  # docs page: interface/the-grid/table settings
+  - out: the-grid/table-settings.svg
+    shot: shots/grid/table-settings.json
+    surface: light
+    callouts:
+      - anchor: density
+        text: "Row height. Three steps, and the choice travels with the view rather than with you."
+      - anchor: statusBar
+        text: "The bar under the grid carrying the live sum, average and count for a selected range."
+      - anchor: timeInDates
+        text: "Off by default — a date column reads more cleanly without it, and the full timestamp is still on hover."
+      - anchor: filterButton
+        text: "The funnel in every column header. Filtering also works from the column menu."
+      - anchor: formats
+        text: "Any numeric column can be shown as a plain number, a currency or a percentage."
+      - anchor: reset
+        text: "Clears your overrides and hands every column back to what the application declares."
+
+  # docs page: interface/the-grid (index)
+  - out: the-grid/first-look.svg
+    shot: shots/grid/first-look.json
+    surface: light
+    callouts:
+      - anchor: sidebar
+        text: "Search the sidebar to jump straight to a model instead of hunting through folders."
+      - anchor: settingsGear
+        text: "The gear opens the table settings panel — density, columns and number formats."
+      - anchor: nameHeader
+        text: "Click a header to sort. The filter control sits on the header by default."
+      - anchor: firstRow
+        text: "Click any row to open its record page."
+
+  # docs page: getting started (the CLI)
   - out: cli/lex-help.svg
     terminal:
       command: lex --help
@@ -25,28 +65,8 @@ figures:
       streamlit: '^\s+streamlit\b.*'
     callouts:
       - anchor: pytest
-        step: 1
         text: "Runs pytest with Django already bootstrapped — no manage.py, no settings to juggle."
       - anchor: groups
-        step: 2
         text: "Lists the configured test groups, so you can run one cluster instead of the whole suite."
       - anchor: streamlit
-        step: 3
         text: "Serves the dashboards behind the same authentication as the app."
-
-  # Produced by `npx playwright test docshots.spec.ts` in the frontend repo,
-  # with LEX_DOCSHOT_DIR pointing here. The PNG sits beside the JSON and is
-  # inlined into the SVG, so the built figure is a single portable file.
-  - out: grid/first-look.svg
-    shot: shots/grid/first-look.json
-    surface: light
-    callouts:
-      - anchor: sidebar
-        step: 1
-        text: "Search the sidebar to jump straight to a model instead of hunting through folders."
-      - anchor: nameHeader
-        step: 2
-        text: "Click a header to sort. The filter control sits on the header by default."
-      - anchor: firstRow
-        step: 3
-        text: "Click any row to open its record page."
