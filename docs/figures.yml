@@ -1,0 +1,52 @@
+# Documentation figures, declared once and rebuilt from the live product.
+#
+#   python -m docshots build docs/figures.yml --out ../lex-app-docs/content/images
+#   python -m docshots build docs/figures.yml --check      # CI: fail if the product moved
+#
+# Two kinds of source:
+#   terminal:  a command that is actually run, its output captured
+#   shot:      a JSON+PNG pair written by the Playwright helper in
+#              process-admin-general-client (e2e/helpers/docshot.ts)
+#
+# `anchors` name the things worth pointing at — a regex over the command's
+# plain output, or (for a browser shot) a CSS selector resolved at capture
+# time. `callouts` say what to write about them. When an anchor stops
+# resolving the build fails, which is the whole point: a renamed button
+# breaks the docs on the pull request that renamed it.
+
+figures:
+  - out: cli/lex-help.svg
+    terminal:
+      command: lex --help
+      title: lex --help
+    anchors:
+      pytest: '^\s+pytest\b.*'
+      groups: '^\s+pytest-groups\b.*'
+      streamlit: '^\s+streamlit\b.*'
+    callouts:
+      - anchor: pytest
+        step: 1
+        text: "Runs pytest with Django already bootstrapped — no manage.py, no settings to juggle."
+      - anchor: groups
+        step: 2
+        text: "Lists the configured test groups, so you can run one cluster instead of the whole suite."
+      - anchor: streamlit
+        step: 3
+        text: "Serves the dashboards behind the same authentication as the app."
+
+  # Produced by `npx playwright test docshots.spec.ts` in the frontend repo,
+  # with LEX_DOCSHOT_DIR pointing here. The PNG sits beside the JSON and is
+  # inlined into the SVG, so the built figure is a single portable file.
+  - out: grid/first-look.svg
+    shot: shots/grid/first-look.json
+    surface: light
+    callouts:
+      - anchor: sidebar
+        step: 1
+        text: "Search the sidebar to jump straight to a model instead of hunting through folders."
+      - anchor: nameHeader
+        step: 2
+        text: "Click a header to sort. The filter control sits on the header by default."
+      - anchor: firstRow
+        step: 3
+        text: "Click any row to open its record page."
