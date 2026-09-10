@@ -11,7 +11,7 @@
 
 ## 1. The proposal, in full
 
-**Publish the compiled frontend to PyPI as a package called `lex-frontend`. At lex-app release
+**Publish the compiled frontend to PyPI as a package called `lex-app-frontend`. At lex-app release
 time, install it and copy its files into `lex/react/build/` before the wheel is built. Record which
 version was used.**
 
@@ -36,7 +36,7 @@ Four decisions, none of them reversible-by-accident:
 1. **Approve the approach** — a published package instead of a committed bundle.
 2. **Approve `latest` as the default** in `frontend-version.txt`, accepting that an unpinned release
    is not attributable from git alone (see §6).
-3. **Create the `lex-frontend` PyPI project and a `PYPI_API_TOKEN_FRONTEND` secret.** The existing
+3. **Create the `lex-app-frontend` PyPI project and a `PYPI_API_TOKEN_FRONTEND` secret.** The existing
    `PYPI_API_TOKEN` is scoped to `lex-app` and cannot publish a different project.
 4. **Decide PAC's default branch.** `main` is 312 commits behind `lex-app-v2-pac-latest`, and
    `workflow_dispatch` is only offered for workflows on the *default* branch — so the publish job
@@ -80,7 +80,7 @@ than after.
 registry auth into the sequence that runs tests → PyPI → Docker → docs. That path is
 release-critical and is already where our failures happen.
 
-**Rejected — publish a wheel; lex-app depends on it at runtime** (`lex-frontend==1.10.0` in
+**Rejected — publish a wheel; lex-app depends on it at runtime** (`lex-app-frontend==1.10.0` in
 `requirements.txt`). This was the previous version of this proposal and it was **wrong**: that line
 is a hard dependency, so merging it before the package is published breaks *every*
 `pip install lex-app`. Build-time vendoring has no such ordering trap.
