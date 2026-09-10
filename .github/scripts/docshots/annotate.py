@@ -30,13 +30,18 @@ from pathlib import Path
 
 from docshots.model import Box, Shot
 
-GUTTER = 300.0        # width of the caption column
-GUTTER_GAP = 34.0     # space between the picture and the captions
-LABEL_PAD = 11.0
-LABEL_LH = 17.0
-LABEL_CHARS = 34      # wrap width, in characters
-LABEL_CW = 6.9        # caption advance width, for box sizing only
-STEP_DELAY = 0.55     # seconds between one callout appearing and the next
+BADGE_R = 8.5         # radius of a numbered mark. Small enough that two
+                      # marks on adjacent terminal rows (18px apart) clear
+                      # each other without a separation pass.
+BADGE_GAP = 3.0       # mark to the edge of the thing it marks
+HALO_STROKE = 1.6
+FIG_PAD = 12.0        # card edge to the picture inside it
+LEGEND_GAP = 18.0     # picture bottom to first legend row
+LEGEND_PAD = 4.0
+LEGEND_LH = 19.0
+LEGEND_ROW_GAP = 12.0
+LEGEND_CW = 7.1       # caption advance width, for wrapping only
+STEP_DELAY = 0.45     # seconds between one callout appearing and the next
 
 
 @dataclass
@@ -54,7 +59,7 @@ class Callout:
     step: int | None = None
 
 
-def _wrap(text: str, width: int = LABEL_CHARS) -> list[str]:
+def _wrap(text: str, width: int) -> list[str]:
     out, line = [], ""
     for word in text.split():
         candidate = f"{line} {word}".strip()
@@ -115,40 +120,40 @@ def _static_css() -> str:
     the animated one is never the only readable version.
     """
     return (
-        "  .ds-arrow{stroke-dashoffset:0}\n"
-        "  .ds-label,.ds-badge{opacity:1}\n"
+        "  .ds-badge,.ds-legend{opacity:1}\n"
         "  .ds-halo{opacity:.85}\n"
     )
 
 
 def _anim_css(count: int) -> str:
-    """Draw-on animation, staggered per callout, and disabled when asked.
+    """Reveal each mark, and its legend row, in reading order.
 
-    `prefers-reduced-motion` collapses every delay to zero rather than
-    removing the final state: the picture must be complete and readable for a
-    reader who never sees a frame of the animation.
+    There is nothing to "draw" any more — the guidance is a number on the
+    thing itself — so the motion that helps is the one that walks a reader
+    through them in order. The halo keeps a slow pulse so the target stays
+    findable on a busy screenshot.
     """
     rules = [
-        "  @keyframes ds-draw{to{stroke-dashoffset:0}}",
-        "  @keyframes ds-fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}",
-        "  @keyframes ds-ring{0%,100%{opacity:.55}50%{opacity:1}}",
-        "  .ds-arrow{stroke-dasharray:var(--len);stroke-dashoffset:var(--len);"
-        "animation:ds-draw .5s ease-out forwards}",
-        "  .ds-label,.ds-badge{opacity:0;animation:ds-fade .4s ease-out forwards}",
-        "  .ds-halo{animation:ds-ring 2.4s ease-in-out infinite}",
+        "  @keyframes ds-pop{from{opacity:0;transform:scale(.82)}to{opacity:1;transform:none}}",
+        "  @keyframes ds-fade{from{opacity:0}to{opacity:1}}",
+        "  @keyframes ds-ring{0%,100%{opacity:.6}50%{opacity:1}}",
+        "  .ds-badge{opacity:0;animation:ds-pop .32s cubic-bezier(.2,.9,.3,1.2) forwards;"
+        "transform-box:fill-box;transform-origin:center}",
+        "  .ds-halo{opacity:0;animation:ds-fade .3s ease-out forwards,"
+        "ds-ring 2.6s ease-in-out infinite}",
+        "  .ds-legend{opacity:0;animation:ds-fade .3s ease-out forwards}",
     ]
     for i in range(count):
         d = i * STEP_DELAY
         rules.append(
-            f"  .ds-s{i} .ds-arrow{{animation-delay:{d + .18:.2f}s}}"
-            f"  .ds-s{i} .ds-label,.ds-s{i} .ds-badge{{animation-delay:{d:.2f}s}}"
-            f"  .ds-s{i} .ds-halo{{animation-delay:{d:.2f}s}}"
+            f"  .ds-s{i} .ds-badge{{animation-delay:{d:.2f}s}}"
+            f"  .ds-s{i}.ds-legend{{animation-delay:{d:.2f}s}}"
+            f"  .ds-s{i} .ds-halo{{animation-delay:{d:.2f}s,{d:.2f}s}}"
         )
     rules.append(
         "  @media (prefers-reduced-motion: reduce){"
-        ".ds-arrow{stroke-dashoffset:0;animation:none}"
-        ".ds-label,.ds-badge{opacity:1;animation:none}"
-        ".ds-halo{animation:none;opacity:.8}}"
+        ".ds-badge,.ds-halo,.ds-legend{opacity:1;animation:none}"
+        ".ds-halo{opacity:.85}}"
     )
     return "\n".join(rules)
 
@@ -222,28 +227,65 @@ def _image_body(shot: Shot) -> str:
     )
 
 
-def _place_labels(items: list[tuple[Callout, Box]], height: float) -> list[float]:
-    """Caption tops, in anchor order, pushed apart just enough not to overlap."""
-    tops, cursor = [], 0.0
-    for callout, box in items:
-        h = len(_wrap(callout.text)) * LABEL_LH + LABEL_PAD * 2
-        top = max(box.cy - h / 2, cursor)
-        tops.append(top)
-        cursor = top + h + 14
-    overflow = (tops[-1] + len(_wrap(items[-1][0].text)) * LABEL_LH + LABEL_PAD * 2) - height if tops else 0
-    if overflow > 0:  # ran off the bottom — slide the whole stack up
-        tops = [max(0.0, t - overflow) for t in tops]
-    return tops
+def _legend_rows(resolved, width: float) -> tuple[list[tuple[float, list[str]]], float]:
+    """Legend line-wrapping and heights, given the picture's width."""
+    text_left = LEGEND_PAD + BADGE_R * 2 + 10
+    chars = max(int((width - text_left - LEGEND_PAD) / LEGEND_CW), 18)
+    rows, y = [], 0.0
+    for _callout, _box in resolved:
+        lines = _wrap(_callout.text, chars)
+        rows.append((y, lines))
+        y += len(lines) * LEGEND_LH + LEGEND_ROW_GAP
+    return rows, y
+
+
+def _badge_positions(resolved, shot: Shot) -> list[tuple[float, float]]:
+    """Where each number sits: outside its target, on whichever side has room.
+
+    Three rules, each one a bug the first version shipped:
+
+    * Outside the box. A number drawn inside covers the very thing it marks —
+      the first terminal figure put "1" on top of the `p` in `pytest`.
+    * Prefer the side with actual room. Left by default, right when the target
+      is hard against the left edge, and only inside when neither fits.
+    * A collision pushes the mark into another column, never onto another row.
+      A mark that drifts vertically to find space is a mark pointing at the
+      wrong line.
+    """
+    need = BADGE_R * 2 + BADGE_GAP
+    placed: list[tuple[float, float]] = []
+    for _callout, box in resolved:
+        cy = min(max(box.cy, BADGE_R), shot.height - BADGE_R)
+        if box.x >= need:                                   # room on the left
+            cx, step = box.x - BADGE_R - BADGE_GAP, -(BADGE_R * 2 + 2)
+        elif shot.width - (box.x + box.width) >= need:      # room on the right
+            cx, step = box.x + box.width + BADGE_R + BADGE_GAP, BADGE_R * 2 + 2
+        else:                                               # neither: sit inside
+            cx, step = box.x + BADGE_R + BADGE_GAP, BADGE_R * 2 + 2
+        while any(abs(cx - px) < BADGE_R * 2 + 1 and abs(cy - py) < BADGE_R * 2 + 1
+                  for px, py in placed):
+            cx += step
+        placed.append((min(max(cx, BADGE_R), shot.width - BADGE_R), cy))
+    return placed
 
 
 def render(shot: Shot, callouts: list[Callout], *, strict: bool = True,
            animate: bool = True, surface: str = "dark") -> str:
-    """The annotated SVG.
+    """The annotated SVG: numbered marks on the picture, captions beneath it.
+
+    The marks sit ON their targets and the captions sit under the picture,
+    keyed by number. An earlier version put captions in a side gutter and drew
+    a curved arrow to each target; every caption for anything on the left then
+    dragged an arrow across the whole screenshot, over the content it was
+    trying to explain. There is no placement rule that fixes that — the
+    geometry is wrong — so the arrows are gone. What is left cannot be
+    misplaced: a number cannot cross the image, and a legend row cannot
+    overlap a control.
 
     `strict` raises when a callout names an anchor the capture could not
     resolve. That is the whole point of anchoring to selectors and regexes:
     when the product moves, the build says so instead of shipping a picture
-    with an arrow pointing at nothing.
+    that quietly points at nothing.
     """
     def clamp(b: Box) -> Box:
         """Keep a box inside the picture.
@@ -251,9 +293,7 @@ def render(shot: Shot, callouts: list[Callout], *, strict: bool = True,
         A DOM element can legitimately be wider than the screenshot that
         contains it — an AG Grid row is as wide as all its columns, including
         the ones scrolled out of view — and an unclamped highlight then runs
-        off the canvas and through the captions. Clamping keeps the highlight
-        on the part the reader can actually see, which is the part being
-        talked about.
+        off the canvas entirely.
         """
         x = min(max(b.x, 0.0), shot.width)
         y = min(max(b.y, 0.0), shot.height)
@@ -274,68 +314,62 @@ def render(shot: Shot, callouts: list[Callout], *, strict: bool = True,
     if problems and strict:
         raise ValueError("annotation anchors did not resolve:\n  " + "\n  ".join(problems))
 
+    # Reading order: down the picture, then across. The legend follows the
+    # same order, so the numbers a reader meets going down the image are the
+    # order they are explained in.
     resolved.sort(key=lambda cb: (cb[1].y, cb[1].x))
-    tops = _place_labels(resolved, shot.height)
 
-    total_w = shot.width + GUTTER_GAP + GUTTER
-    total_h = max(shot.height, (tops[-1] + 90) if tops else 0) + 8
+    rows, legend_h = _legend_rows(resolved, shot.width)
+    total_w = shot.width + FIG_PAD * 2
+    total_h = shot.height + FIG_PAD * 2 + (LEGEND_GAP + legend_h if resolved else 0)
 
     body = _terminal_body(shot) if shot.cells else _image_body(shot)
-    layers: list[str] = []
+    marks, legend = [], []
+    badge_xy = _badge_positions(resolved, shot)
+    text_left = LEGEND_PAD + BADGE_R * 2 + 10
 
-    for i, ((callout, box), top) in enumerate(zip(resolved, tops)):
-        lines = _wrap(callout.text)
-        lw = min(GUTTER, max(len(l) for l in lines) * LABEL_CW + LABEL_PAD * 2 +
-                 (26 if callout.step is not None else 0))
-        lh = len(lines) * LABEL_LH + LABEL_PAD * 2
-        lx = shot.width + GUTTER_GAP
+    for i_pos, ((callout, box), (row_y, lines)) in enumerate(zip(resolved, rows)):
+        n = callout.step if callout.step is not None else i_pos + 1
 
-        # Arrow: from the caption's left edge to the nearest edge of the target.
-        x2 = min(box.x + box.width + 6, shot.width - 2)
-        y2 = box.cy
-        x1, y1 = lx - 8, top + lh / 2
-        cx = (x1 + x2) / 2
-        path = f"M{x1:.1f},{y1:.1f} C{cx:.1f},{y1:.1f} {cx:.1f},{y2:.1f} {x2 + 10:.1f},{y2:.1f}"
-        length = abs(x1 - x2) + abs(y1 - y2) + 40
-
+        # Inset by half the stroke so the whole outline lands INSIDE the box.
+        # Outsetting it — the first version added 3px on every side — makes
+        # highlights on adjacent 18px terminal rows overlap by construction.
+        i = HALO_STROKE / 2
         halo = (
-            f'<rect class="ds-halo" x="{box.x - 4:.1f}" y="{box.y - 3:.1f}" '
-            f'width="{box.width + 8:.1f}" height="{box.height + 6:.1f}" rx="5" '
-            f'fill="var(--ds-accent-soft)" stroke="var(--ds-accent)" stroke-width="1.6"/>'
+            f'<rect class="ds-halo" x="{box.x + i:.1f}" y="{box.y + i:.1f}" '
+            f'width="{max(box.width - HALO_STROKE, 1):.1f}" '
+            f'height="{max(box.height - HALO_STROKE, 1):.1f}" rx="4" '
+            f'fill="var(--ds-accent-soft)" stroke="var(--ds-accent)" '
+            f'stroke-width="{HALO_STROKE}"/>'
         )
-        arrow = (
-            f'<path class="ds-arrow" d="{path}" fill="none" stroke="var(--ds-accent)" '
-            f'stroke-width="2" stroke-linecap="round" marker-end="url(#ds-head)" '
-            f'style="--len:{length:.0f}"/>'
+        bx, by = badge_xy[i_pos]
+        mark = (
+            f'<g class="ds-badge">'
+            f'<circle cx="{bx:.1f}" cy="{by:.1f}" r="{BADGE_R}" fill="var(--ds-accent)" '
+            f'stroke="var(--ds-panel)" stroke-width="1.5"/>'
+            f'<text x="{bx:.1f}" y="{by + 3.9:.1f}" text-anchor="middle" font-size="11" '
+            f'font-weight="700" fill="#fff" '
+            f'font-family="system-ui,-apple-system,Segoe UI,sans-serif">{n}</text>'
+            f'</g>'
         )
+        marks.append(f'<g class="ds-s{i_pos}">{halo}{mark}</g>')
 
-        tx = lx + LABEL_PAD + (26 if callout.step is not None else 0)
+        ly = shot.height + LEGEND_GAP + row_y
         tspans = "".join(
-            f'<tspan x="{tx:.1f}" dy="{0 if j == 0 else LABEL_LH}">{escape(l)}</tspan>'
+            f'<tspan x="{text_left:.1f}" dy="{0 if j == 0 else LEGEND_LH}">{escape(l)}</tspan>'
             for j, l in enumerate(lines)
         )
-        badge = ""
-        if callout.step is not None:
-            badge = (
-                f'<g class="ds-badge">'
-                f'<circle cx="{lx + LABEL_PAD + 9:.1f}" cy="{top + LABEL_PAD + 8:.1f}" r="10" '
-                f'fill="var(--ds-accent)"/>'
-                f'<text x="{lx + LABEL_PAD + 9:.1f}" y="{top + LABEL_PAD + 12:.1f}" '
-                f'text-anchor="middle" font-size="11.5" font-weight="700" fill="#fff" '
-                f'font-family="system-ui,-apple-system,Segoe UI,sans-serif">{callout.step}</text>'
-                f"</g>"
-            )
-        label = (
-            f'<g class="ds-label">'
-            f'<rect x="{lx:.1f}" y="{top:.1f}" width="{lw:.1f}" height="{lh:.1f}" rx="8" '
-            f'fill="var(--ds-panel)" stroke="var(--ds-line)"/>'
-            f'<text y="{top + LABEL_PAD + 12:.1f}" font-size="13" fill="var(--ds-ink)" '
+        legend.append(
+            f'<g class="ds-s{i_pos} ds-legend">'
+            f'<circle cx="{LEGEND_PAD + BADGE_R:.1f}" cy="{ly + BADGE_R:.1f}" r="{BADGE_R}" '
+            f'fill="var(--ds-accent)"/>'
+            f'<text x="{LEGEND_PAD + BADGE_R:.1f}" y="{ly + BADGE_R + 3.9:.1f}" '
+            f'text-anchor="middle" font-size="11" font-weight="700" fill="#fff" '
+            f'font-family="system-ui,-apple-system,Segoe UI,sans-serif">{n}</text>'
+            f'<text y="{ly + BADGE_R + 4.5:.1f}" font-size="13.5" fill="var(--ds-ink)" '
             f'font-family="system-ui,-apple-system,Segoe UI,Roboto,sans-serif">{tspans}</text>'
-            f"</g>"
+            f'</g>'
         )
-        # Badge after the label: the label's own rect is opaque, so a badge
-        # drawn before it is simply painted over.
-        layers.append(f'<g class="ds-s{i}">{halo}{arrow}{label}{badge}</g>')
 
     return f"""<svg xmlns="http://www.w3.org/2000/svg" width="{total_w:.0f}" height="{total_h:.0f}" \
 viewBox="0 0 {total_w:.0f} {total_h:.0f}" role="img" \
@@ -343,13 +377,13 @@ aria-label="{escape(shot.title or 'annotated screenshot')}">
 <style>
 {_theme_css(surface)}{_anim_css(len(resolved)) if animate else _static_css()}
 </style>
-<defs>
-  <marker id="ds-head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
-    <path d="M0,0 L10,5 L0,10 z" fill="var(--ds-accent)"/>
-  </marker>
-</defs>
+<rect x="0.5" y="0.5" width="{total_w - 1:.0f}" height="{total_h - 1:.0f}" rx="12" \
+fill="var(--ds-panel)" stroke="var(--ds-line)"/>
+<g transform="translate({FIG_PAD},{FIG_PAD})">
 <g>{body}</g>
-{"".join(layers)}
+{"".join(marks)}
+{"".join(legend)}
+</g>
 </svg>
 """
 
