@@ -36,6 +36,8 @@ BADGE_R = 8.5         # radius of a numbered mark. Small enough that two
 BADGE_GAP = 3.0       # mark to the edge of the thing it marks
 HALO_STROKE = 1.6
 FIG_PAD = 12.0        # card edge to the picture inside it
+MARGIN = 24.0         # reserved lane each side of the picture, for the marks
+LEADER_MIN = 4.0      # shorter than this and the line is noise, not a connector
 LEGEND_GAP = 18.0     # picture bottom to first legend row
 LEGEND_PAD = 4.0
 LEGEND_LH = 19.0
@@ -120,7 +122,7 @@ def _static_css() -> str:
     the animated one is never the only readable version.
     """
     return (
-        "  .ds-badge,.ds-legend{opacity:1}\n"
+        "  .ds-badge,.ds-legend,.ds-leader{opacity:1}\n"
         "  .ds-halo{opacity:.85}\n"
     )
 
@@ -141,18 +143,18 @@ def _anim_css(count: int) -> str:
         "transform-box:fill-box;transform-origin:center}",
         "  .ds-halo{opacity:0;animation:ds-fade .3s ease-out forwards,"
         "ds-ring 2.6s ease-in-out infinite}",
-        "  .ds-legend{opacity:0;animation:ds-fade .3s ease-out forwards}",
+        "  .ds-legend,.ds-leader{opacity:0;animation:ds-fade .3s ease-out forwards}",
     ]
     for i in range(count):
         d = i * STEP_DELAY
         rules.append(
-            f"  .ds-s{i} .ds-badge{{animation-delay:{d:.2f}s}}"
+            f"  .ds-s{i} .ds-badge,.ds-s{i} .ds-leader{{animation-delay:{d:.2f}s}}"
             f"  .ds-s{i}.ds-legend{{animation-delay:{d:.2f}s}}"
             f"  .ds-s{i} .ds-halo{{animation-delay:{d:.2f}s,{d:.2f}s}}"
         )
     rules.append(
         "  @media (prefers-reduced-motion: reduce){"
-        ".ds-badge,.ds-halo,.ds-legend{opacity:1;animation:none}"
+        ".ds-badge,.ds-halo,.ds-legend,.ds-leader{opacity:1;animation:none}"
         ".ds-halo{opacity:.85}}"
     )
     return "\n".join(rules)
@@ -229,7 +231,7 @@ def _image_body(shot: Shot) -> str:
 
 def _legend_rows(resolved, width: float) -> tuple[list[tuple[float, list[str]]], float]:
     """Legend line-wrapping and heights, given the picture's width."""
-    text_left = LEGEND_PAD + BADGE_R * 2 + 10
+    text_left = -MARGIN + LEGEND_PAD + BADGE_R * 2 + 10
     chars = max(int((width - text_left - LEGEND_PAD) / LEGEND_CW), 18)
     rows, y = [], 0.0
     for _callout, _box in resolved:
@@ -239,34 +241,34 @@ def _legend_rows(resolved, width: float) -> tuple[list[tuple[float, list[str]]],
     return rows, y
 
 
-def _badge_positions(resolved, shot: Shot) -> list[tuple[float, float]]:
-    """Where each number sits: outside its target, on whichever side has room.
+def _badge_positions(resolved, shot: Shot) -> list[tuple[float, float, str]]:
+    """Place every mark in a lane OUTSIDE the picture, and say which side.
 
-    Three rules, each one a bug the first version shipped:
+    Earlier versions put the mark next to its target, inside the picture. Even
+    "outside the box" is not outside the *content*: on the table-settings
+    panel the space to the left of a switch is its own label, so the numbers
+    landed on the words they were meant to be explaining.
 
-    * Outside the box. A number drawn inside covers the very thing it marks —
-      the first terminal figure put "1" on top of the `p` in `pytest`.
-    * Prefer the side with actual room. Left by default, right when the target
-      is hard against the left edge, and only inside when neither fits.
-    * A collision pushes the mark into another column, never onto another row.
-      A mark that drifts vertically to find space is a mark pointing at the
-      wrong line.
+    A reserved lane cannot collide with anything, because nothing is drawn
+    there. The mark goes in the lane nearer its target and a short horizontal
+    leader connects the two. Marks that would collide are nudged apart along
+    the lane — allowed here, unlike before, because the leader keeps showing
+    which row the mark belongs to.
     """
-    need = BADGE_R * 2 + BADGE_GAP
-    placed: list[tuple[float, float]] = []
+    picked: list[list] = []
     for _callout, box in resolved:
-        cy = min(max(box.cy, BADGE_R), shot.height - BADGE_R)
-        if box.x >= need:                                   # room on the left
-            cx, step = box.x - BADGE_R - BADGE_GAP, -(BADGE_R * 2 + 2)
-        elif shot.width - (box.x + box.width) >= need:      # room on the right
-            cx, step = box.x + box.width + BADGE_R + BADGE_GAP, BADGE_R * 2 + 2
-        else:                                               # neither: sit inside
-            cx, step = box.x + BADGE_R + BADGE_GAP, BADGE_R * 2 + 2
-        while any(abs(cx - px) < BADGE_R * 2 + 1 and abs(cy - py) < BADGE_R * 2 + 1
-                  for px, py in placed):
-            cx += step
-        placed.append((min(max(cx, BADGE_R), shot.width - BADGE_R), cy))
-    return placed
+        side = "left" if box.x <= shot.width - (box.x + box.width) else "right"
+        cx = -MARGIN / 2 if side == "left" else shot.width + MARGIN / 2
+        picked.append([cx, box.cy, side])
+
+    for side in ("left", "right"):
+        lane = sorted((i for i, p in enumerate(picked) if p[2] == side),
+                      key=lambda i: picked[i][1])
+        floor = -1e9
+        for i in lane:
+            picked[i][1] = max(picked[i][1], floor + BADGE_R * 2 + 2)
+            floor = picked[i][1]
+    return [(cx, cy, side) for cx, cy, side in picked]
 
 
 def render(shot: Shot, callouts: list[Callout], *, strict: bool = True,
@@ -287,19 +289,31 @@ def render(shot: Shot, callouts: list[Callout], *, strict: bool = True,
     when the product moves, the build says so instead of shipping a picture
     that quietly points at nothing.
     """
-    def clamp(b: Box) -> Box:
-        """Keep a box inside the picture.
+    # Minimum of a target that must actually be in the picture. Below this the
+    # anchor resolved to something the capture did not photograph.
+    VISIBLE_MIN = 4.0
 
-        A DOM element can legitimately be wider than the screenshot that
-        contains it — an AG Grid row is as wide as all its columns, including
-        the ones scrolled out of view — and an unclamped highlight then runs
-        off the canvas entirely.
+    def clip(b: Box) -> Box | None:
+        """The part of `b` inside the picture, or None if none of it is.
+
+        Two different situations that used to be conflated, to this figure's
+        cost:
+
+        * A box that OVERFLOWS the picture is still visible — an AG Grid row is
+          as wide as every column including those scrolled out of view — so it
+          is trimmed to what the reader can see.
+        * A box ENTIRELY outside was never photographed. The table-settings
+          popover scrolls, and `COLUMN FORMATS` sits below its fold; clamping
+          it produced a highlight pinned to the bottom edge, marking a control
+          that is not in the picture at all. That has to fail, so `--check`
+          reports it and the figure gets scrolled or re-clipped.
         """
-        x = min(max(b.x, 0.0), shot.width)
-        y = min(max(b.y, 0.0), shot.height)
-        return Box(x=x, y=y,
-                   width=max(min(b.x + b.width, shot.width) - x, 1.0),
-                   height=max(min(b.y + b.height, shot.height) - y, 1.0))
+        x, y = max(b.x, 0.0), max(b.y, 0.0)
+        w = min(b.x + b.width, shot.width) - x
+        h = min(b.y + b.height, shot.height) - y
+        if w < VISIBLE_MIN or h < VISIBLE_MIN:
+            return None
+        return Box(x=x, y=y, width=w, height=h)
 
     resolved: list[tuple[Callout, Box]] = []
     problems: list[str] = []
@@ -310,7 +324,16 @@ def render(shot: Shot, callouts: list[Callout], *, strict: bool = True,
         elif not a.found or a.box is None:
             problems.append(f"{c.anchor!r}: {a.detail or 'not found in the capture'}")
         else:
-            resolved.append((c, clamp(a.box)))
+            visible = clip(a.box)
+            if visible is None:
+                problems.append(
+                    f"{c.anchor!r}: resolved at "
+                    f"({a.box.x:.0f},{a.box.y:.0f} {a.box.width:.0f}x{a.box.height:.0f}) "
+                    f"but the picture is {shot.width:.0f}x{shot.height:.0f} — it is outside "
+                    f"the captured area, so nothing can point at it"
+                )
+            else:
+                resolved.append((c, visible))
     if problems and strict:
         raise ValueError("annotation anchors did not resolve:\n  " + "\n  ".join(problems))
 
@@ -319,14 +342,14 @@ def render(shot: Shot, callouts: list[Callout], *, strict: bool = True,
     # order they are explained in.
     resolved.sort(key=lambda cb: (cb[1].y, cb[1].x))
 
-    rows, legend_h = _legend_rows(resolved, shot.width)
-    total_w = shot.width + FIG_PAD * 2
+    rows, legend_h = _legend_rows(resolved, shot.width + MARGIN * 2)
+    total_w = shot.width + (FIG_PAD + MARGIN) * 2
     total_h = shot.height + FIG_PAD * 2 + (LEGEND_GAP + legend_h if resolved else 0)
 
     body = _terminal_body(shot) if shot.cells else _image_body(shot)
     marks, legend = [], []
     badge_xy = _badge_positions(resolved, shot)
-    text_left = LEGEND_PAD + BADGE_R * 2 + 10
+    text_left = -MARGIN + LEGEND_PAD + BADGE_R * 2 + 10
 
     for i_pos, ((callout, box), (row_y, lines)) in enumerate(zip(resolved, rows)):
         n = callout.step if callout.step is not None else i_pos + 1
@@ -342,9 +365,18 @@ def render(shot: Shot, callouts: list[Callout], *, strict: bool = True,
             f'fill="var(--ds-accent-soft)" stroke="var(--ds-accent)" '
             f'stroke-width="{HALO_STROKE}"/>'
         )
-        bx, by = badge_xy[i_pos]
+        bx, by, side = badge_xy[i_pos]
+        edge = box.x if side == "left" else box.x + box.width
+        tip = bx + BADGE_R if side == "left" else bx - BADGE_R
+        leader = ""
+        if abs(edge - tip) > LEADER_MIN:
+            leader = (
+                f'<path class="ds-leader" d="M{tip:.1f},{by:.1f} L{edge:.1f},{box.cy:.1f}" '
+                f'fill="none" stroke="var(--ds-accent)" stroke-width="1.6" '
+                f'stroke-linecap="round" opacity="0.85"/>'
+            )
         mark = (
-            f'<g class="ds-badge">'
+            f'{leader}<g class="ds-badge">'
             f'<circle cx="{bx:.1f}" cy="{by:.1f}" r="{BADGE_R}" fill="var(--ds-accent)" '
             f'stroke="var(--ds-panel)" stroke-width="1.5"/>'
             f'<text x="{bx:.1f}" y="{by + 3.9:.1f}" text-anchor="middle" font-size="11" '
@@ -361,9 +393,9 @@ def render(shot: Shot, callouts: list[Callout], *, strict: bool = True,
         )
         legend.append(
             f'<g class="ds-s{i_pos} ds-legend">'
-            f'<circle cx="{LEGEND_PAD + BADGE_R:.1f}" cy="{ly + BADGE_R:.1f}" r="{BADGE_R}" '
+            f'<circle cx="{-MARGIN + LEGEND_PAD + BADGE_R:.1f}" cy="{ly + BADGE_R:.1f}" r="{BADGE_R}" '
             f'fill="var(--ds-accent)"/>'
-            f'<text x="{LEGEND_PAD + BADGE_R:.1f}" y="{ly + BADGE_R + 3.9:.1f}" '
+            f'<text x="{-MARGIN + LEGEND_PAD + BADGE_R:.1f}" y="{ly + BADGE_R + 3.9:.1f}" '
             f'text-anchor="middle" font-size="11" font-weight="700" fill="#fff" '
             f'font-family="system-ui,-apple-system,Segoe UI,sans-serif">{n}</text>'
             f'<text y="{ly + BADGE_R + 4.5:.1f}" font-size="13.5" fill="var(--ds-ink)" '
@@ -379,7 +411,7 @@ aria-label="{escape(shot.title or 'annotated screenshot')}">
 </style>
 <rect x="0.5" y="0.5" width="{total_w - 1:.0f}" height="{total_h - 1:.0f}" rx="12" \
 fill="var(--ds-panel)" stroke="var(--ds-line)"/>
-<g transform="translate({FIG_PAD},{FIG_PAD})">
+<g transform="translate({FIG_PAD + MARGIN},{FIG_PAD})">
 <g>{body}</g>
 {"".join(marks)}
 {"".join(legend)}

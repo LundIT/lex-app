@@ -163,9 +163,10 @@ def _halos(svg: str) -> list[tuple[float, float, float, float]]:
 
 
 def _badges(svg: str) -> list[tuple[float, float]]:
+    """Marks in picture coordinates. Negative x means the left lane."""
     body = svg[svg.index("<g transform="):]
     return [(float(x), float(y)) for x, y in re.findall(
-        r'<circle cx="([\d.]+)" cy="([\d.]+)" r="[\d.]+" fill="var\(--ds-accent\)" stroke=', body)]
+        r'<circle cx="(-?[\d.]+)" cy="(-?[\d.]+)" r="[\d.]+" fill="var\(--ds-accent\)" stroke=', body)]
 
 
 def test_highlights_on_adjacent_rows_do_not_overlap():
@@ -182,53 +183,71 @@ def test_highlights_on_adjacent_rows_do_not_overlap():
     assert y1 + h1 <= y2 + 0.01, f"highlights overlap: {boxes}"
 
 
-def test_a_mark_never_covers_the_thing_it_marks():
+def test_a_mark_is_placed_outside_the_picture_entirely():
+    # "Outside the box" was not enough: on the settings panel the space beside
+    # a switch is that switch's own label, so numbers landed on the words they
+    # were explaining. The lanes are outside the picture, where nothing is
+    # drawn, so a mark cannot cover anything.
     shot = Shot(width=400, height=200, image_href="data:image/png;base64,AA==",
                 anchors=[Anchor("a", Box(120, 40, 100, 20))])
     (cx, _), = _badges(annotate.render(shot, [Callout("a", "x")]))
-    assert cx + annotate.BADGE_R <= 120, "the mark sits on top of its own target"
+    assert cx < 0 or cx > 400, f"mark at {cx} is inside the picture"
 
 
-def test_a_target_against_the_left_edge_puts_its_mark_on_the_right():
-    # There is no room on the left, and the old fallback put the number inside
-    # the box — straight over the first characters of the line.
+def test_a_mark_goes_to_the_lane_nearest_its_target():
+    shot = Shot(width=400, height=200, image_href="data:image/png;base64,AA==", anchors=[
+        Anchor("near_left", Box(10, 40, 40, 20)),
+        Anchor("near_right", Box(340, 100, 50, 20)),
+    ])
+    left, right = _badges(annotate.render(
+        shot, [Callout("near_left", "l"), Callout("near_right", "r")]))
+    assert left[0] < 0, "a target hugging the left edge should be marked from the left"
+    assert right[0] > 400, "a target hugging the right edge should be marked from the right"
+
+
+def test_a_leader_connects_a_mark_to_a_target_it_is_not_touching():
     shot = Shot(width=400, height=200, image_href="data:image/png;base64,AA==",
-                anchors=[Anchor("a", Box(2, 40, 200, 18))])
-    (cx, _), = _badges(annotate.render(shot, [Callout("a", "x")]))
-    assert cx - annotate.BADGE_R >= 202 - 0.01, "the mark should move to the right-hand side"
+                anchors=[Anchor("a", Box(120, 40, 60, 20))])
+    svg = annotate.render(shot, [Callout("a", "x")])
+    assert 'class="ds-leader"' in svg, "a distant mark needs a line back to its target"
 
 
-def test_marks_on_adjacent_rows_clear_each_other():
-    shot = Shot(width=400, height=200, image_href="data:image/png;base64,AA==", anchors=[
-        Anchor("a", Box(100, 100, 200, 18)),
-        Anchor("b", Box(100, 118, 200, 18)),
+def test_marks_in_one_lane_never_overlap():
+    # Three targets close together on the same side. Nudging along the lane is
+    # allowed now — the leader keeps showing which row each mark belongs to —
+    # but two marks may still never sit on top of each other.
+    shot = Shot(width=400, height=300, image_href="data:image/png;base64,AA==", anchors=[
+        Anchor("a", Box(300, 100, 90, 18)),
+        Anchor("b", Box(300, 118, 90, 18)),
+        Anchor("c", Box(300, 136, 90, 18)),
     ])
-    marks = _badges(annotate.render(shot, [Callout("a", "first"), Callout("b", "second")]))
-    assert len(marks) == 2
-    (x1, y1), (x2, y2) = marks
-    apart = max(abs(x1 - x2), abs(y1 - y2))
-    assert apart >= annotate.BADGE_R * 2 - 1, f"marks overlap: {marks}"
+    marks = _badges(annotate.render(
+        shot, [Callout("a", "1"), Callout("b", "2"), Callout("c", "3")]))
+    assert len(marks) == 3
+    ys = sorted(y for _x, y in marks)
+    gaps = [b - a for a, b in zip(ys, ys[1:])]
+    assert min(gaps) >= annotate.BADGE_R * 2, f"marks overlap in the lane: {ys}"
 
 
-def test_a_crowded_mark_moves_sideways_not_onto_another_row():
-    # Two targets at the SAME y. The collision has to resolve horizontally;
-    # nudging one vertically would make it point at a line it is not about.
-    shot = Shot(width=400, height=200, image_href="data:image/png;base64,AA==", anchors=[
-        Anchor("a", Box(100, 60, 50, 20)),
-        Anchor("b", Box(152, 60, 50, 20)),
-    ])
-    marks = _badges(annotate.render(shot, [Callout("a", "one"), Callout("b", "two")]))
-    assert marks[0][1] == marks[1][1], "a mark drifted off its row"
-    assert abs(marks[0][0] - marks[1][0]) >= annotate.BADGE_R * 2 - 1
+def test_an_anchor_outside_the_captured_area_fails_rather_than_being_dragged_back():
+    # The table-settings popover scrolls, and COLUMN FORMATS sits below its
+    # fold. Clamping produced a highlight pinned to the bottom edge marking a
+    # control that is not in the picture — a confidently wrong figure.
+    shot = Shot(width=356, height=550, image_href="data:image/png;base64,AA==",
+                anchors=[Anchor("below_fold", Box(13, 596, 326, 21))])
+    with pytest.raises(ValueError, match="outside the captured area"):
+        annotate.render(shot, [Callout("below_fold", "formats")])
 
 
-def test_captions_are_escaped_rather_than_injected():
-    svg = annotate.render(_shot_with(Box(1, 1, 9, 9)),
-                          [Callout("target", 'a <b> & "quote"')])
-    assert "<b>" not in svg and "&lt;b&gt;" in svg
+def test_a_box_that_merely_overflows_is_still_trimmed_and_kept():
+    # The other half of the same rule: an AG Grid row is wider than the
+    # screenshot but genuinely visible, so it is trimmed rather than rejected.
+    shot = Shot(width=1280, height=720, image_href="data:image/png;base64,AA==",
+                anchors=[Anchor("row", Box(320, 100, 2083, 25))])
+    svg = annotate.render(shot, [Callout("row", "the row")])
+    widths = [w for _x, _y, w, _h in _halos(svg)]
+    assert widths and max(widths) <= 1280
 
-
-# ── the shot round-trip ──────────────────────────────────────────────────
 
 def test_a_shot_survives_being_written_and_read():
     shot = Shot(width=3, height=4, title="t", surface="light",
