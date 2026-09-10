@@ -1,7 +1,7 @@
 # Documentation figures, declared once and rebuilt from the live product.
 #
 #   # 1. capture, from the frontend repo (process-admin-general-client):
-#   LEX_DOCSHOT_DIR=<path>/docs/shots npx playwright test docshots.spec.ts
+#   LEX_DOCSHOT_DIR=<lex-app>/docs/shots npx playwright test docshots.spec.ts
 #
 #   # 2. render, from here:
 #   python -m docshots build docs/figures.yml --out ../lex-app-docs/content/images
@@ -15,14 +15,29 @@
 # `anchors` name the things worth pointing at — a regex over the command's
 # plain output, or (for a browser shot) a CSS selector resolved at capture
 # time. `callouts` say what to write about them. When an anchor stops
-# resolving the build fails, which is the whole point: a renamed control
-# breaks the docs on the pull request that renamed it.
+# resolving the build fails: a renamed control breaks the docs on the pull
+# request that renamed it.
 #
-# Captions are numbered in reading order and listed under the picture; the
-# marks sit in a lane beside it. Nothing is drawn over the screenshot.
+# A figure with no callouts is a plain framed screenshot. That is the right
+# answer when the page's prose already walks through what is on screen and
+# the reader only needs to see it.
 
 figures:
-  # docs page: interface/the-grid/table settings
+  # docs page: using-the-app/the-grid (index)
+  - out: the-grid/first-look.svg
+    shot: shots/grid/first-look.json
+    surface: light
+    callouts:
+      - anchor: sidebar
+        text: "Search the sidebar to jump straight to a model instead of hunting through folders."
+      - anchor: settingsGear
+        text: "The gear opens the table settings panel — density, columns and number formats."
+      - anchor: nameHeader
+        text: "Click a header to sort. The filter control sits on the header by default."
+      - anchor: firstRow
+        text: "Click any row to open its record page."
+
+  # docs page: using-the-app/the-grid/table settings
   - out: the-grid/table-settings.svg
     shot: shots/grid/table-settings.json
     surface: light
@@ -40,21 +55,43 @@ figures:
       - anchor: reset
         text: "Clears your overrides and hands every column back to what the application declares."
 
-  # docs page: interface/the-grid (index)
-  - out: the-grid/first-look.svg
-    shot: shots/grid/first-look.json
+  # docs page: using-the-app/record-detail (index)
+  - out: record-detail/tabs.svg
+    shot: shots/record/tabs.json
     surface: light
     callouts:
-      - anchor: sidebar
-        text: "Search the sidebar to jump straight to a model instead of hunting through folders."
-      - anchor: settingsGear
-        text: "The gear opens the table settings panel — density, columns and number formats."
-      - anchor: nameHeader
-        text: "Click a header to sort. The filter control sits on the header by default."
-      - anchor: firstRow
-        text: "Click any row to open its record page."
+      - anchor: summaryTab
+        text: "The record's own fields, laid out for reading rather than editing."
+      - anchor: analyticsTab
+        text: "A Streamlit dashboard scoped to this record."
+      - anchor: timelineTab
+        text: "Each version as a bar on a time axis — how long each one was the current one."
+      - anchor: historyTab
+        text: "Every version as a row, with time-travel to any of them."
+      - anchor: auditTab
+        text: "Who changed what, and when, for this record alone."
 
-  # docs page: getting started (the CLI)
+  # The tab pages already walk through what is on screen; these are framed
+  # screenshots rather than annotated ones.
+  - out: record-detail/summary-tab.svg
+    shot: shots/record/summary-tab.json
+    surface: light
+  - out: record-detail/timeline-tab.svg
+    shot: shots/record/timeline-tab.json
+    surface: light
+  - out: record-detail/history-tab.svg
+    shot: shots/record/history-tab.json
+    surface: light
+  - out: record-detail/audit-log-tab.svg
+    shot: shots/record/audit-log-tab.json
+    surface: light
+
+  # docs page: reference/CLI Commands, and the home page's note about it.
+  #
+  # Needs the lex-app CLI first on PATH. On many machines `/usr/bin/lex` is
+  # flex, the lexical analyser, and the capture then photographs its usage
+  # message instead — which the anchors catch, but only after a confusing
+  # minute.
   - out: cli/lex-help.svg
     terminal:
       command: lex --help
