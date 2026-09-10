@@ -25,7 +25,7 @@ What changed is not *that* they ship inside it — it is **how they get there**.
 
 | | Before | Now |
 |---|---|---|
-| Where the files come from | committed into lex-app's git, 6.3 MB per update | published once to PyPI as `lex-frontend` |
+| Where the files come from | committed into lex-app's git, 6.3 MB per update | published once to PyPI as `lex-app-frontend` |
 | How they reach a release | someone opens a PR that copies them in | the release pipeline installs them |
 | Which frontend shipped | nothing recorded it | recorded in three places (below) |
 
@@ -41,7 +41,7 @@ the files are. Nothing about the frontend becomes Python.
 You publish a release in the GitHub releases page. Then, before the lex-app wheel is built:
 
 1. The pipeline reads **`frontend-version.txt`** in the repository root.
-2. It runs `pip install lex-frontend` — at that version, or the newest one if the file says
+2. It runs `pip install lex-app-frontend` — at that version, or the newest one if the file says
    `latest`.
 3. It copies the installed files into **`lex/react/build/`**.
 4. It writes down which version it actually used.

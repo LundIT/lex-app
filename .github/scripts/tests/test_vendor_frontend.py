@@ -49,8 +49,8 @@ def test_comments_and_whitespace_are_ignored(tmp_path):
 
 
 @pytest.mark.parametrize("requested,expected", [
-    ("latest", "lex-frontend"),
-    ("1.10.0", "lex-frontend==1.10.0"),
+    ("latest", "lex-app-frontend"),
+    ("1.10.0", "lex-app-frontend==1.10.0"),
 ])
 def test_the_pip_argument_matches_the_request(requested, expected):
     assert vf.pip_spec(requested) == expected
@@ -58,14 +58,24 @@ def test_the_pip_argument_matches_the_request(requested, expected):
 
 # ── Vendoring ─────────────────────────────────────────────────────────
 
-def _fake_install(target_holder, version="1.10.0", files=("index.html",)):
+COMMIT = "b532231a" * 5
+
+
+def _fake_install(target_holder, version="1.10.0", files=("index.html",),
+                  commit=COMMIT):
     """A `run` that materialises a plausible pip --target install."""
     def run(argv, **kwargs):
         target = Path(argv[argv.index("--target") + 1])
         target_holder.append(target)
-        (target / f"lex_frontend-{version}.dist-info").mkdir(parents=True)
-        build = target / "lex_frontend" / "build"
+        (target / f"lex_app_frontend-{version}.dist-info").mkdir(parents=True)
+        pkg = target / "lex_app_frontend"
+        build = pkg / "build"
         (build / "assets").mkdir(parents=True)
+        # The real package stamps both at publish time.
+        (pkg / "__init__.py").write_text(
+            f'_VERSION = "{version}"\n'
+            + (f'_COMMIT = "{commit}"\n' if commit else "")
+        )
         for name in files:
             (build / name).write_text("x")
         (build / "assets" / "index-ABC123.js").write_text("console.log(1)")
@@ -99,7 +109,7 @@ def test_the_resolved_version_is_recorded_in_the_bundle(tmp_path):
     manifest = json.loads((bundle / vf.MANIFEST_NAME).read_text())
     assert manifest["version"] == "1.12.3"
     assert manifest["requested"] == "latest"
-    assert manifest["package"] == "lex-frontend"
+    assert manifest["package"] == "lex-app-frontend"
 
 
 def test_vendoring_replaces_rather_than_merges(tmp_path):
@@ -120,7 +130,7 @@ def test_a_failed_install_stops_the_release(tmp_path):
         class R:
             returncode = 1
             stdout = ""
-            stderr = "ERROR: No matching distribution found for lex-frontend==9.9.9"
+            stderr = "ERROR: No matching distribution found for lex-app-frontend==9.9.9"
         return R()
 
     with pytest.raises(SystemExit, match="could not install"):
@@ -130,7 +140,7 @@ def test_a_failed_install_stops_the_release(tmp_path):
 def test_an_install_with_no_dist_info_stops_the_release(tmp_path):
     def run(argv, **kwargs):
         target = Path(argv[argv.index("--target") + 1])
-        (target / "lex_frontend" / "build").mkdir(parents=True)
+        (target / "lex_app_frontend" / "build").mkdir(parents=True)
         class R:
             returncode = 0
             stdout = stderr = ""
@@ -143,8 +153,8 @@ def test_an_install_with_no_dist_info_stops_the_release(tmp_path):
 def test_a_package_with_no_usable_bundle_stops_the_release(tmp_path):
     def run(argv, **kwargs):
         target = Path(argv[argv.index("--target") + 1])
-        (target / "lex_frontend-1.10.0.dist-info").mkdir(parents=True)
-        (target / "lex_frontend" / "build").mkdir(parents=True)   # no index.html
+        (target / "lex_app_frontend-1.10.0.dist-info").mkdir(parents=True)
+        (target / "lex_app_frontend" / "build").mkdir(parents=True)   # no index.html
         class R:
             returncode = 0
             stdout = stderr = ""
@@ -153,3 +163,40 @@ def test_a_package_with_no_usable_bundle_stops_the_release(tmp_path):
     # Shipping an empty bundle would 404 every page with nothing in the logs.
     with pytest.raises(SystemExit, match="no usable bundle"):
         vf.vendor("latest", run=run, bundle_path=tmp_path / "build")
+
+
+# ── The manifest has to satisfy the readers that already exist ────────
+#
+# release_notes.manifest.validate and ranges.frontend_sha_at both require a
+# 40-character `sha` and ignore everything else. A manifest carrying only a
+# version leaves the frontend range unresolvable through either path, which is
+# precisely the gap this pipeline exists to close.
+
+def test_the_manifest_carries_the_build_commit_as_a_sha(tmp_path):
+    bundle = tmp_path / "build"
+    vf.vendor("latest", run=_fake_install([]), bundle_path=bundle)
+    manifest = json.loads((bundle / vf.MANIFEST_NAME).read_text())
+    assert manifest["sha"] == COMMIT
+
+
+def test_the_manifest_validates_against_the_existing_reader(tmp_path):
+    import sys
+    from pathlib import Path as _P
+    sys.path.insert(0, str(_P(__file__).resolve().parents[1]))
+    from release_notes import manifest as manifest_module
+
+    bundle = tmp_path / "build"
+    vf.vendor("latest", run=_fake_install([]), bundle_path=bundle)
+    blob = (bundle / vf.MANIFEST_NAME).read_text()
+    # None means valid. Anything else is the reason it was rejected.
+    assert manifest_module.validate(blob) is None
+
+
+def test_a_package_with_no_recorded_commit_still_vendors(tmp_path, capsys):
+    # Tolerated rather than fatal: the bundle is fine, only the attribution is
+    # missing, and a release must not stop for that.
+    bundle = tmp_path / "build"
+    vf.vendor("latest", run=_fake_install([], commit=None), bundle_path=bundle)
+    manifest = json.loads((bundle / vf.MANIFEST_NAME).read_text())
+    assert "sha" not in manifest
+    assert "records no build commit" in capsys.readouterr().err

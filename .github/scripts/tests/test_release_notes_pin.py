@@ -27,7 +27,7 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
     ("latest", False),
     (">=1.10.0", False),
     ("1.10.*", False),
-    ("lex-frontend==1.10.0", False),
+    ("lex-app-frontend==1.10.0", False),
 ], ids=["exact", "exact-rc", "latest", "range", "wildcard", "requirement-line"])
 def test_only_an_exact_version_counts_as_provenance(line, ok):
     assert bool(ranges.VERSION_RE.fullmatch(line)) is ok
