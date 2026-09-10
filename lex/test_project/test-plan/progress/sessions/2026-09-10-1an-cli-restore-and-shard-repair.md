@@ -80,14 +80,34 @@ whole-suite run could show it:
 AssertionError: 4804734144 == 4804734144 : a client from a finished loop must not be handed to the next one
 ```
 
-1.281 and 1.282 took `id()` inside each `asyncio.run` and compared the integers.
-The first client (and lock) is freed when its loop closes, so CPython is free to
-hand the second object the same address — and under a whole-suite run's
-allocation pattern it does. The init cluster alone never reproduced it. Both now
-return the object, hold both references live, and compare with `assertIsNot`;
-identity of live objects cannot alias. Mutation-tested: dropping either per-loop
-guard in `lex/proxy.py` (`_UPSTREAM_CLIENT_LOOP is loop`, `_loop_lock`'s key)
-fails exactly the matching scenario and nothing else.
+The first read of that — CPython reusing a freed object's address — was wrong,
+and comparing live objects with `assertIsNot` did not fix it. Instrumented and
+measured instead:
+
+```
+asyncio.run from: nest_asyncio
+loop ids: 4838791248 4838791248   same object: True
+client ids: 4860205136 4860205136 same object: True
+```
+
+Something ahead of this cluster in a whole-suite run imports a module that calls
+`nest_asyncio.apply()`, which replaces `asyncio.run` with a version that reuses
+the **current** loop. Both calls then share one loop, so the proxy correctly
+returns the same client and the same lock — the assertion was failing against
+*correct* behaviour, and the test's premise ("two successive event loops") was
+simply not true in that context. Nothing in the init cluster alone applies the
+patch, which is why it only ever failed in the whole suite.
+
+Both scenarios now build their loops with `asyncio.new_event_loop()` +
+`run_until_complete`, which no patch of `asyncio.run` can affect, assert that
+the two loops really are distinct before asserting anything about the objects,
+and hold both loops live — `_LOOP_LOCKS` is keyed by `id(loop)` and keeps no
+reference, so a collected loop's address could be inherited by a later one
+(recorded as BUG-033). Mutation-tested: dropping either per-loop guard in
+`lex/proxy.py` (`_UPSTREAM_CLIENT_LOOP is loop`, `_loop_lock`'s key) fails
+exactly the matching scenario and nothing else. In the context that reproduced
+the failure (calculation_logging + celery_async ahead of the class) cluster 1
+goes from 2 failures to 0.
 
 Whole suite afterwards: 1559 pass / 32 fail, and **none of the 32 is in cluster
 1**. BUG-030 is updated with what those 32 actually are — 23 order-dependent

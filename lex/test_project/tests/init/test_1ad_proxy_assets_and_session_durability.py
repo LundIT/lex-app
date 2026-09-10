@@ -1293,16 +1293,16 @@ class TestCluster01ad_ForwardingHardening(SimpleTestCase):
         the previous loop left in the pool -- and a module-level singleton
         outlives any number of loops.
         """
-        # Both clients are held live while they are compared, and identity is
-        # compared rather than `id()`. An earlier revision took `id()` inside
-        # each loop and returned the integer: the first client was then freed
-        # with its loop, CPython reused the address for the second, and the
-        # assertion read `4804734144 == 4804734144` -- a whole-suite failure
-        # that the init cluster alone never reproduced, because it is the
-        # allocator's behaviour and not the proxy's. Live objects cannot alias.
-        first = asyncio.run(self._client())
-        second = asyncio.run(self._client())
+        first, loop_one = self._in_own_loop(self._client)
+        second, loop_two = self._in_own_loop(self._client)
 
+        # The premise, asserted rather than assumed -- see `_in_own_loop`.
+        self.assertIsNot(
+            loop_one, loop_two,
+            msg="two distinct loops are what this scenario is about; one loop proves nothing",
+        )
+        # Identity of two live objects, not `id()` of two dead ones: both are
+        # still referenced here, so the addresses cannot alias.
         self.assertIsNot(
             first, second,
             msg="a client from a finished loop must not be handed to the next one",
@@ -1310,6 +1310,32 @@ class TestCluster01ad_ForwardingHardening(SimpleTestCase):
 
     async def _client(self):
         return await proxy._get_upstream_client()
+
+    @staticmethod
+    def _in_own_loop(make_coro):
+        """Run ``make_coro()`` on a loop of its own; return ``(result, loop)``.
+
+        ``asyncio.run`` is NOT a reliable way to get a fresh loop here, and that
+        cost a wrong diagnosis. In a whole-suite run something ahead of this
+        cluster imports a module that calls ``nest_asyncio.apply()``, which
+        replaces ``asyncio.run`` with a version that reuses the CURRENT loop --
+        measured directly: ``asyncio.run from: nest_asyncio`` and both calls
+        reporting the same loop object. Both runs then share one loop, the proxy
+        correctly hands back the same client, and the assertion failed against
+        *correct* behaviour. The init cluster alone never reproduced it, because
+        nothing there applies the patch.
+
+        Creating the loop explicitly is immune to that patch. The loop is also
+        returned so the caller can hold it: ``_LOOP_LOCKS`` is keyed by
+        ``id(loop)`` and keeps no reference, so letting a finished loop be
+        collected would let a later loop land on its address and inherit its
+        lock (recorded as BUG-033).
+        """
+        loop = asyncio.new_event_loop()
+        try:
+            return loop.run_until_complete(make_coro()), loop
+        finally:
+            loop.close()
 
     # -- 1.282 ---------------------------------------------------------
     def test_1_282_the_single_flight_lock_belongs_to_the_running_loop(self) -> None:
@@ -1333,11 +1359,16 @@ class TestCluster01ad_ForwardingHardening(SimpleTestCase):
             await asyncio.gather(hold(), hold(), hold())
             return lock
 
-        # The lock objects themselves, held live and compared by identity -- see
-        # 1.281 for why `id()` across two finished loops is not a comparison.
-        first = asyncio.run(contend())
-        second = asyncio.run(contend())
+        # Explicit loops, held live, compared by identity -- see `_in_own_loop`
+        # in the class above for why `asyncio.run` cannot be trusted to give two
+        # of them and why `id()` cannot be trusted to tell them apart.
+        first, loop_one = self._in_own_loop(contend)
+        second, loop_two = self._in_own_loop(contend)
 
+        self.assertIsNot(
+            loop_one, loop_two,
+            msg="two distinct loops are what this scenario is about; one loop proves nothing",
+        )
         self.assertIsNot(
             first, second, msg="each loop must get its own lock, or contention raises",
         )
