@@ -336,13 +336,22 @@ The durable fix was to stop needing a new variable rather than to demand one —
 
 | Property | Value |
 | --- | --- |
-| Scenario range | 1.300 – 1.304 |
+| Scenario range | 1.300 – 1.305 |
 | Type | U |
 | Files covered | `lex/proxy.py` (`_SERVER_OWNED_RESPONSE_HEADERS`, `_REQUEST_DROP`, `_build_proxied_response`, the gzip scope in `_build_static_routes`) |
 | Test file | `lex/test_project/tests/init/test_1an_proxy_http2_safe_headers.py` |
-| Test classes | `TestCluster01an_Http2SafeResponseHeaders` (1.300–1.304) |
+| Test classes | `TestCluster01an_Http2SafeResponseHeaders` (1.300–1.305) |
 | Fixtures | none — a `_RawStream` stub shaped exactly like Streamlit's `/media` response, over the `_upstream_send` seam |
-| Tests landed | **5 pass / 0 fail**, 2 subtests |
-| Status | ✅ Complete — **4 of 5 fail against the unfixed tree** |
+| Tests landed | **6 pass / 0 fail**, 2 subtests |
+| Status | ✅ Complete — **4 of 6 fail against the unfixed tree**; 1.305 is the guard on the buffered branch and fails only when that branch's drop is removed |
 | Note | Reported as: a download starts, sits at **0 bytes**, ends in a network error — while the proxy's own log shows nothing but `GET /media/....pdf -> 200`. Three defects combined, and **none is visible over HTTP/1.1**, which is why local development never saw it. (1) `Date` and `Server` were relayed from the upstream, so uvicorn's own copies made them duplicates — both are singleton fields (RFC 9110 5.5.2) and an HTTP/2 intermediary rejects a duplicated singleton by resetting the stream, which the browser reports as `ERR_HTTP2_PROTOCOL_ERROR` **against a 200**. (2) `Content-Length` was dropped from every proxied response, forcing `Transfer-Encoding: chunked` — forbidden outright in HTTP/2 (RFC 9113 8.2.2) — and leaving the browser no idea how big the download was, hence the literal "stays at 0 BYTE". (3) GZip wrapped the whole app, re-compressing already-compressed PDFs and ZIPs for no saving, on an event loop this process shares with the Streamlit script runner. The duplication **predated** the streaming change — verified against the pre-#750 proxy, which also emitted two of each — but the streaming change added the chunked framing and the re-compression that turned a tolerated violation into a fatal one. |
 | Allocation note | Letters `ad`–`am` and scenarios 1.293–1.299 were allocated concurrently by other batches (theme work) while this was open, including a second `1ad`. `1an` / 1.300–1.304 is the first slot free of that overlap; the collision itself needs a human decision and is not resolved here. |
+
+**1.305 added on review.** `_build_proxied_response` treats its two branches differently — the streaming path *keeps* `Content-Length` deliberately, the buffered path must drop it — and 1.300–1.304 only exercised the streaming one (`_RawStream` exists to take that path). That left the branch where a stale header is **fatal** rather than merely wrong entirely uncovered, which was conspicuous next to the counter-guards already written for the other two asymmetries (1.303 for the gzip scope, 1.304 for the request side).
+
+Both halves measured, and they fail for different reasons:
+
+- a stale **length** — the compressed 40 against a decoded 5000 — makes a real uvicorn raise `RuntimeError: Response content longer than Content-Length`, and the client sees `http=200 bytes=0`. **That is the reported symptom verbatim**: a download that starts, sits at 0 bytes, and ends in a network error.
+- a stale **encoding** raises `DecodingError: incorrect header check` in the client, which tries to gunzip bytes httpx already decoded.
+
+Verified as a guard, not decoration: removing `drop | {"content-encoding", "content-length"}` from the consumed branch fails 1.305 and nothing else.

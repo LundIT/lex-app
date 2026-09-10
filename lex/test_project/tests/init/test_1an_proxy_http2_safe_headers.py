@@ -248,3 +248,84 @@ class TestCluster01an_Http2SafeResponseHeaders(SimpleTestCase):
             "content-length", seen,
             msg="Content-Length must never be forwarded on the request side",
         )
+
+    # -- 1.305 ---------------------------------------------------------
+    def test_1_305_a_consumed_response_drops_the_length_and_the_encoding(self) -> None:
+        """
+        Scenario 1.305: the buffered relay path keeps neither Content-Length nor
+        Content-Encoding.
+        Given: an already-consumed upstream response carrying `Content-Encoding: gzip`
+               and the COMPRESSED length, whose `.content` httpx has decoded
+        When: the proxy relays it
+        Then: both headers are gone, and the body is the decoded bytes.
+
+        `_build_proxied_response` treats its two branches differently, and 1.300–1.304
+        only exercise the streaming one -- `_RawStream` exists precisely to take that
+        path. This is the branch where a stale header is *fatal* rather than merely
+        wrong, and the two halves fail for different reasons. Both measured:
+
+        * a stale **length** -- the compressed 40 against a decoded 5000 -- makes a
+          real uvicorn raise `RuntimeError: Response content longer than
+          Content-Length`, and the client sees `http=200 bytes=0`. That is the
+          reported symptom verbatim: a download that starts, sits at 0 bytes and
+          ends in a network error.
+        * a stale **encoding** raises `DecodingError: incorrect header check` in the
+          client, which tries to gunzip bytes httpx already decoded.
+
+        The streaming path keeps Content-Length on purpose, so this asymmetry is
+        deliberate -- which is exactly why it needs a guard rather than a comment.
+        """
+        import gzip
+
+        plain = b"x" * 5000
+        packed = gzip.compress(plain)
+        self.assertNotEqual(
+            len(plain), len(packed),
+            msg="the fixture is only meaningful if the two lengths differ",
+        )
+
+        def _consumed() -> httpx.Response:
+            # `content=` makes the response born consumed, and `.content` is then
+            # the DECODED body -- so neither the declared length nor the declared
+            # encoding describes what we are about to send.
+            return httpx.Response(
+                200,
+                headers=[
+                    ("content-type", "text/plain"),
+                    ("content-encoding", "gzip"),
+                    ("content-length", str(len(packed))),
+                ],
+                content=packed,
+            )
+
+        self.assertTrue(
+            _consumed().is_stream_consumed,
+            msg="precondition: this fixture must take the buffered branch",
+        )
+
+        async def _upstream(method, url, *, content=None, headers=None):
+            return _consumed()
+
+        with patch.object(proxy, "_upstream_send", _upstream):
+            with TestClient(proxy.app) as client:
+                resp = client.get("/_stcore/health")
+
+        self.assertIsNone(
+            resp.headers.get("content-length"),
+            msg=(
+                "a consumed response must not declare the upstream's compressed length; "
+                "uvicorn raises 'Response content longer than Content-Length' and the "
+                "client is left with a 200 and zero bytes"
+            ),
+        )
+        self.assertIsNone(
+            resp.headers.get("content-encoding"),
+            msg=(
+                "nor its encoding -- httpx already decoded the body, so a client that "
+                "believes the header fails with 'incorrect header check'"
+            ),
+        )
+        self.assertEqual(
+            resp.content, plain,
+            msg="and the body relayed must be the decoded bytes",
+        )
