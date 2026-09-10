@@ -1293,16 +1293,23 @@ class TestCluster01ad_ForwardingHardening(SimpleTestCase):
         the previous loop left in the pool -- and a module-level singleton
         outlives any number of loops.
         """
-        first = asyncio.run(self._client_id())
-        second = asyncio.run(self._client_id())
+        # Both clients are held live while they are compared, and identity is
+        # compared rather than `id()`. An earlier revision took `id()` inside
+        # each loop and returned the integer: the first client was then freed
+        # with its loop, CPython reused the address for the second, and the
+        # assertion read `4804734144 == 4804734144` -- a whole-suite failure
+        # that the init cluster alone never reproduced, because it is the
+        # allocator's behaviour and not the proxy's. Live objects cannot alias.
+        first = asyncio.run(self._client())
+        second = asyncio.run(self._client())
 
-        self.assertNotEqual(
+        self.assertIsNot(
             first, second,
             msg="a client from a finished loop must not be handed to the next one",
         )
 
-    async def _client_id(self) -> int:
-        return id(await proxy._get_upstream_client())
+    async def _client(self):
+        return await proxy._get_upstream_client()
 
     # -- 1.282 ---------------------------------------------------------
     def test_1_282_the_single_flight_lock_belongs_to_the_running_loop(self) -> None:
@@ -1324,12 +1331,14 @@ class TestCluster01ad_ForwardingHardening(SimpleTestCase):
                 async with lock:
                     await asyncio.sleep(0)
             await asyncio.gather(hold(), hold(), hold())
-            return id(lock)
+            return lock
 
+        # The lock objects themselves, held live and compared by identity -- see
+        # 1.281 for why `id()` across two finished loops is not a comparison.
         first = asyncio.run(contend())
         second = asyncio.run(contend())
 
-        self.assertNotEqual(
+        self.assertIsNot(
             first, second, msg="each loop must get its own lock, or contention raises",
         )
 

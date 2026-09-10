@@ -2,7 +2,7 @@
 date: 2026-09-10
 clusters: [1]
 tests_added: 0
-suite_tally: "init: 534 pass / 0 fail / 13 skip / 134 subtests (was 6 fail); 1ae: 41 pass / 0 fail (was 6 fail / 35 pass); 1ad: 56 collected, 56 defined (was 66 defined / 56 collected)"
+suite_tally: "init: 534 pass / 0 fail / 13 skip / 134 subtests (was 6 fail); 1ae: 41 pass / 0 fail (was 6 fail / 35 pass); 1ad: 56 collected, 56 defined (was 66 defined / 56 collected); whole suite: 1559 pass / 32 fail, none in cluster 1 after the 1.281/1.282 fix"
 ---
 
 # Merge `3d14e959` deleted production code that the tests on disk import
@@ -70,3 +70,26 @@ that range belongs to `1af`/`1ag`/`1ah`. It is now **1.336–1.341**, above
 everything on disk, and `max_scenario` says 341. No test logic changed — the
 HTTP/2 header work itself is unchanged and still 6 pass / 0 fail, with 1.341
 failing only when the buffered branch's header drop is removed.
+
+## What the whole-suite run then found in cluster 1
+
+Two of the ten restored self-review scenarios were themselves wrong, and only a
+whole-suite run could show it:
+
+```
+AssertionError: 4804734144 == 4804734144 : a client from a finished loop must not be handed to the next one
+```
+
+1.281 and 1.282 took `id()` inside each `asyncio.run` and compared the integers.
+The first client (and lock) is freed when its loop closes, so CPython is free to
+hand the second object the same address — and under a whole-suite run's
+allocation pattern it does. The init cluster alone never reproduced it. Both now
+return the object, hold both references live, and compare with `assertIsNot`;
+identity of live objects cannot alias. Mutation-tested: dropping either per-loop
+guard in `lex/proxy.py` (`_UPSTREAM_CLIENT_LOOP is loop`, `_loop_lock`'s key)
+fails exactly the matching scenario and nothing else.
+
+Whole suite afterwards: 1559 pass / 32 fail, and **none of the 32 is in cluster
+1**. BUG-030 is updated with what those 32 actually are — 23 order-dependent
+calculation_logging failures (0 alone, 9 per-cluster, 23 whole-suite), 6 in the
+opt-in `stress` group, and `gate_selftest`'s one deliberate failure.
