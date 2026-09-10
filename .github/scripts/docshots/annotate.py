@@ -243,25 +243,41 @@ def _legend_rows(resolved, width: float) -> tuple[list[tuple[float, list[str]]],
 
 
 def _badge_positions(resolved, shot: Shot) -> list[tuple[float, float, str]]:
-    """Place every mark in a lane OUTSIDE the picture, and say which side.
+    """Place every mark, and say how it was placed.
 
-    Earlier versions put the mark next to its target, inside the picture. Even
-    "outside the box" is not outside the *content*: on the table-settings
-    panel the space to the left of a switch is its own label, so the numbers
-    landed on the words they were meant to be explaining.
+    Two placements, chosen by the target's own size:
 
-    A reserved lane cannot collide with anything, because nothing is drawn
-    there. The mark goes in the lane nearer its target and a short horizontal
-    leader connects the two. Marks that would collide are nudged apart along
-    the lane — allowed here, unlike before, because the leader keeps showing
-    which row the mark belongs to.
+    * **Inside a corner**, for a target big enough to hold a mark without
+      covering what it is marking — a tab, a card, a panel. No leader is
+      needed: the mark is on the thing.
+    * **In a lane beside the picture**, with a short leader, for anything too
+      small to sit a mark on — a switch, a table row, a column header.
+
+    Size decides it rather than position, and that is the correction: an
+    earlier version sent everything to the lanes, so a horizontal row of five
+    tabs produced five leaders cutting straight across the sidebar to reach
+    them. Lanes assume targets are spread vertically; a toolbar is the case
+    where that assumption is exactly wrong.
     """
+    # Roughly 3.5x the mark in BOTH dimensions. "Big enough to fit" is the
+    # wrong test: a 39px-tall button fits a 17px mark and still has its label
+    # centred right where the mark lands. A control only has a genuinely
+    # empty corner once it is several times the mark's size — a tab (98x72)
+    # does, a button (119x39) and a column header (194x56) do not.
+    ROOMY = BADGE_R * 7
     picked: list[list] = []
+
     for _callout, box in resolved:
+        if box.width >= ROOMY and box.height >= ROOMY:
+            picked.append([box.x + BADGE_R + BADGE_GAP, box.y + BADGE_R + BADGE_GAP, "inside"])
+            continue
         side = "left" if box.x <= shot.width - (box.x + box.width) else "right"
         cx = -MARGIN / 2 if side == "left" else shot.width + MARGIN / 2
-        picked.append([cx, box.cy, side])
+        picked.append([cx, min(max(box.cy, BADGE_R), shot.height - BADGE_R), side])
 
+    # Lane marks are nudged apart along their lane; the leader keeps showing
+    # which row each belongs to. Inside marks sit on distinct boxes and are
+    # left alone.
     for side in ("left", "right"):
         lane = sorted((i for i, p in enumerate(picked) if p[2] == side),
                       key=lambda i: picked[i][1])
@@ -367,15 +383,16 @@ def render(shot: Shot, callouts: list[Callout], *, strict: bool = True,
             f'stroke-width="{HALO_STROKE}"/>'
         )
         bx, by, side = badge_xy[i_pos]
-        edge = box.x if side == "left" else box.x + box.width
-        tip = bx + BADGE_R if side == "left" else bx - BADGE_R
         leader = ""
-        if abs(edge - tip) > LEADER_MIN:
-            leader = (
-                f'<path class="ds-leader" d="M{tip:.1f},{by:.1f} L{edge:.1f},{box.cy:.1f}" '
-                f'fill="none" stroke="var(--ds-accent)" stroke-width="1.6" '
-                f'stroke-linecap="round" opacity="0.85"/>'
-            )
+        if side != "inside":
+            edge = box.x if side == "left" else box.x + box.width
+            tip = bx + BADGE_R if side == "left" else bx - BADGE_R
+            if abs(edge - tip) > LEADER_MIN:
+                leader = (
+                    f'<path class="ds-leader" d="M{tip:.1f},{by:.1f} L{edge:.1f},{box.cy:.1f}" '
+                    f'fill="none" stroke="var(--ds-accent)" stroke-width="1.6" '
+                    f'stroke-linecap="round" opacity="0.85"/>'
+                )
         mark = (
             f'{leader}<g class="ds-badge">'
             f'<circle cx="{bx:.1f}" cy="{by:.1f}" r="{BADGE_R}" fill="var(--ds-accent)" '

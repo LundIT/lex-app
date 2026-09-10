@@ -205,6 +205,31 @@ def test_a_mark_goes_to_the_lane_nearest_its_target():
     assert right[0] > 400, "a target hugging the right edge should be marked from the right"
 
 
+def test_a_roomy_target_carries_its_mark_in_a_corner():
+    # A tab is 98x72. Sending it to a lane produced a leader across the whole
+    # screenshot — five tabs in a row meant five leaders over the sidebar.
+    shot = Shot(width=400, height=300, image_href="data:image/png;base64,AA==",
+                anchors=[Anchor("tab", Box(120, 40, 98, 72))])
+    (cx, cy), = _badges(annotate.render(shot, [Callout("tab", "x")]))
+    assert 120 <= cx <= 218 and 40 <= cy <= 112, "a roomy target should hold its own mark"
+
+
+def test_a_roomy_target_needs_no_leader():
+    # The mark is ON the thing, so a line to it would go nowhere.
+    shot = Shot(width=400, height=300, image_href="data:image/png;base64,AA==",
+                anchors=[Anchor("tab", Box(120, 40, 98, 72))])
+    assert 'class="ds-leader"' not in annotate.render(shot, [Callout("tab", "x")])
+
+
+def test_a_control_whose_label_fills_it_is_not_roomy():
+    # 119x39 fits a 17px mark and still has its label centred exactly where the
+    # mark would land. Fitting is not the test; having an empty corner is.
+    shot = Shot(width=400, height=300, image_href="data:image/png;base64,AA==",
+                anchors=[Anchor("button", Box(120, 40, 119, 39))])
+    (cx, _), = _badges(annotate.render(shot, [Callout("button", "x")]))
+    assert cx < 0 or cx > 400, "a label-filled control should be marked from a lane"
+
+
 def test_a_leader_connects_a_mark_to_a_target_it_is_not_touching():
     shot = Shot(width=400, height=200, image_href="data:image/png;base64,AA==",
                 anchors=[Anchor("a", Box(120, 40, 60, 20))])
