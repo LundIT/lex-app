@@ -93,6 +93,29 @@ def installed_commit(target: Path) -> str | None:
     return match.group(1) if match else None
 
 
+def resolve(requested: str, *, run=subprocess.run) -> str:
+    """The concrete version `requested` names, without touching the tree.
+
+    `latest` is convenient but it resolves to whatever is newest at the moment
+    it runs. Resolving once at the gate — and recording it on the prerelease —
+    turns that into a decision somebody can see before promoting, instead of a
+    lottery run again at publish time.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        target = Path(tmp)
+        result = run(
+            [sys.executable, "-m", "pip", "install", "--quiet", "--no-deps",
+             "--target", str(target), pip_spec(requested)],
+            capture_output=True, text=True,
+        )
+        if result.returncode != 0:
+            sys.exit(
+                f"could not resolve {pip_spec(requested)}: "
+                f"{(result.stderr or '').strip() or f'pip exited {result.returncode}'}"
+            )
+        return installed_version(target)
+
+
 def vendor(requested: str, *, run=subprocess.run, bundle_path: Path = BUNDLE_PATH) -> str:
     """Install `requested` and copy its bundle into the tree. Returns the version."""
     with tempfile.TemporaryDirectory() as tmp:
@@ -168,9 +191,18 @@ def main(argv: list[str] | None = None) -> int:
         "--print-version", action="store_true",
         help="Print only the resolved version, for a workflow to capture.",
     )
+    parser.add_argument(
+        "--resolve-only", action="store_true",
+        help="Print the version `latest` resolves to and change nothing.",
+    )
     args = parser.parse_args(argv)
 
     requested = args.version or read_spec()
+
+    if args.resolve_only:
+        print(resolve(requested))
+        return 0
+
     version = vendor(requested)
     if args.print_version:
         print(version)

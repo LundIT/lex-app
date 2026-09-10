@@ -200,3 +200,39 @@ def test_a_package_with_no_recorded_commit_still_vendors(tmp_path, capsys):
     manifest = json.loads((bundle / vf.MANIFEST_NAME).read_text())
     assert "sha" not in manifest
     assert "records no build commit" in capsys.readouterr().err
+
+
+# ── Resolving without vendoring ───────────────────────────────────────
+#
+# `latest` resolves to whatever is newest at the moment it runs. Resolving once
+# at the gate and recording it on the prerelease turns that into a decision
+# somebody can see before promoting, rather than a lottery re-run at publish.
+
+def test_resolve_reports_the_version_without_touching_the_tree(tmp_path):
+    bundle = tmp_path / "build"
+    got = vf.resolve("latest", run=_fake_install([], version="1.12.0"))
+    assert got == "1.12.0"
+    assert not bundle.exists(), "resolve must not write a bundle"
+
+
+def test_resolve_honours_an_exact_request():
+    calls = []
+
+    def run(argv, **kwargs):
+        calls.append(argv)
+        return _fake_install([], version="1.11.2")(argv, **kwargs)
+
+    assert vf.resolve("1.11.2", run=run) == "1.11.2"
+    assert "lex-app-frontend==1.11.2" in calls[0]
+
+
+def test_a_version_that_does_not_exist_fails_loudly():
+    def run(argv, **kwargs):
+        class R:
+            returncode = 1
+            stdout = ""
+            stderr = "ERROR: No matching distribution found for lex-app-frontend==9.9.9"
+        return R()
+
+    with pytest.raises(SystemExit, match="could not resolve"):
+        vf.resolve("9.9.9", run=run)

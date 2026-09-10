@@ -204,9 +204,27 @@ jobs:
       # for setuptools to package it — see "lex.react" in pyproject.toml.
       - name: Vendor the published frontend
         id: frontend
+        env:
+          BODY: ${{ github.event.release.body }}
         run: |
           set -euo pipefail
-          VERSION=$(python .github/scripts/vendor_frontend.py --print-version | tail -1)
+          # Prefer the version the prerelease gate already resolved and
+          # recorded. frontend-version.txt usually says `latest`, and resolving
+          # that again here would ship whatever became newest between the gate
+          # and the promotion — a different frontend from the one on the
+          # release body that a human read before promoting.
+          PINNED=$(printf '%s' "$BODY" \
+            | sed -n 's/.*<!-- *lex:frontend-version *\([^ >]*\) *-->.*/\1/p' | head -1)
+          if [ -n "${PINNED}" ]; then
+            echo "Using the version recorded on the release: ${PINNED}"
+            VERSION=$(python .github/scripts/vendor_frontend.py \
+              --version "${PINNED}" --print-version | tail -1)
+          else
+            # No marker: a manual release cut, or a gate that could not
+            # resolve. Resolve now and say so.
+            echo "::notice::No lex:frontend-version on the release; resolving now."
+            VERSION=$(python .github/scripts/vendor_frontend.py --print-version | tail -1)
+          fi
           echo "VERSION=${VERSION}" >> "$GITHUB_OUTPUT"
 
       # `latest` is not recoverable from a git tag, so the resolved version is
@@ -242,3 +260,17 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           password: ${{ secrets.PYPI_API_TOKEN }}
+
+      # Publishing and walking away meant a wheel missing its frontend bundle
+      # would be found by a customer rather than by us. This installs the exact
+      # version from PyPI into a throwaway environment and checks it contains
+      # what it should. PyPI indexing lags publication, so the install retries.
+      #
+      # It runs AFTER publication, so failing cannot unpublish anything — the
+      # point is to find out within minutes instead of days. It is a hard
+      # failure deliberately: a red release is the signal.
+      - name: Smoke-test the published wheel
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        run: |
+          python .github/scripts/smoke_published_wheel.py \
+            --version "${{ steps.version.outputs.VERSION }}"

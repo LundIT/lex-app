@@ -79,6 +79,10 @@ rebuild identically later, or when the newest frontend is not one you want to sh
 on the tag will tell you the release asked for "latest" — it cannot tell you what "latest" meant
 that day.
 
+**So it is resolved once, at the prerelease gate, and recorded on the release body.** The version
+that ships is the one whoever promoted the release could read before promoting — not whatever
+happened to be newest at the later moment the publish job ran.
+
 So the pipeline writes the resolved version down in three places:
 
 - **inside the bundle**, as `lex/react/build/.frontend-version.json` — which means it is inside the
@@ -114,6 +118,21 @@ publish is worse than no tag.
 It refuses to run if the version has already been tagged. Bump `package.json` and try again.
 
 ---
+
+## Rolling back
+
+There is a workflow for it: Actions → **Roll back the frontend** → give it a version and a reason.
+
+It checks the version exists on PyPI, pins `frontend-version.txt`, and opens a pull request. It
+deliberately does **not** release — you merge the PR and cut a patch release as normal, so the
+rollback is reviewed and appears in the history like any other change.
+
+It refuses a version that cannot be installed. Pinning something that does not exist turns a
+rollback into a broken release, which is the worst outcome for a change made in a hurry.
+
+**The release note must say the frontend was rolled back, and why.** `v2.1.3` shipped the redesign
+and `v2.1.4` pulled it back out with no note at either end — customers were told about a feature and
+then silently lost it. The reason you give the workflow is the text to use.
 
 ## Answering "which frontend is in this release?"
 
