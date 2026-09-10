@@ -10,10 +10,11 @@ markdown the ordinary way:
 
     ![Running the test groups](../images/cli/pytest-groups.svg)
 
-That matters for the docs site: Quartz strips raw HTML from markdown, but an
-`<img>` pointing at an SVG file renders, and CSS animation inside that file
-still runs — so the arrows draw themselves without the site needing to know
-anything about it.
+Plain image syntax on purpose. Verified for the docs site: nothing in the
+Quartz config's `ignorePatterns` excludes `.svg`, so the Assets emitter copies
+the file through, and an `<img>` at an SVG renders with the CSS animation
+inside it still running — so the figure reveals itself in order without the
+site needing to know anything about it.
 
 Colour does NOT come from the reader's theme. `prefers-color-scheme` inside an
 `<img>`-loaded SVG is not reliably delivered (measured: Chromium renders both
