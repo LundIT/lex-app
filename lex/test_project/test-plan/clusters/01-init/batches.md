@@ -208,15 +208,15 @@
 
 ---
 
-### Batch 1ae — Streamlit auth proxy: iframe re-auth breakout (refused-to-connect fix) ✅
+### Batch 1z — Streamlit auth proxy: iframe re-auth breakout (refused-to-connect fix) ✅
 
 | Property | Value |
 | --- | --- |
-| Scenario range | 1.274 – 1.279 |
+| Scenario range | 1.211 – 1.216 |
 | Type | U |
 | Files covered | `lex/proxy.py` (`_unauthenticated_response`, `_is_iframe_document_request`) |
 | Test file | `lex/test_project/tests/init/test_1z_proxy_iframe_breakout.py` |
-| Test classes | `TestCluster01z_ProxyIframeBreakout` (1.274 iframe → 401 frame-breakout not IdP redirect, 1.275 `<frame>` also breaks out, 1.276 top-level HTML still redirects to `/auth/login`, 1.277 no `Sec-Fetch-*` keeps redirect, 1.278 non-HTML → 401 JSON, 1.279 `_is_iframe_document_request` case-insensitive + scoped) |
+| Test classes | `TestCluster01z_ProxyIframeBreakout` (1.211 iframe → 401 frame-breakout not IdP redirect, 1.212 `<frame>` also breaks out, 1.213 top-level HTML still redirects to `/auth/login`, 1.214 no `Sec-Fetch-*` keeps redirect, 1.215 non-HTML → 401 JSON, 1.216 `_is_iframe_document_request` case-insensitive + scoped) |
 | Fixtures | none — minimal ASGI `Request` builder + `patch.object(proxy, "PUBLIC_URL", "")` |
 | Tests landed | **6 pass / 0 fail** (`python -m lex pytest`) |
 | Coverage gain | proxy deny-branch routing: `Sec-Fetch-Dest: iframe`/`frame` document loads break out to a top-level login instead of redirecting the frame into Keycloak's un-frameable login page (`frame-ancestors 'self'` → "refused to connect"); the top-level redirect and API-401 paths stay unchanged |
