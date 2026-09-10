@@ -92,6 +92,52 @@ class ParentCalculation(CalculationModel):
 
 This ensures logs from the child appear nested under the parent in the frontend.
 
+## Grouping logs into sections
+
+A long calculation is easier to follow when its log reads like a document — with a
+title for each phase of the work. Pass a plain **string** to `model_logging_context`
+and everything logged inside that block is grouped under a titled section, no backing
+model required:
+
+```python
+def calculate(self):
+    with model_logging_context("Data collection"):
+        LexLogger().add_text("Loaded 1,240 investor positions.").log()
+
+        with model_logging_context("Validation"):
+            LexLogger().add_list(["Schemas OK", "No missing funds"]).log()
+
+    with model_logging_context("Aggregation"):
+        LexLogger().add_text("Rolled positions up to the fund level.").log()
+```
+
+Each title becomes its own node in the execution tree, and sections nest freely — inside
+one another and around child calculations. The result is a table of contents for the run:
+
+```
+Investor Track Record
+├─ Data collection
+│  └─ Validation
+└─ Aggregation
+```
+
+A few things worth knowing:
+
+- **Sections that never log anything are skipped.** If a block produces no output, it
+  simply doesn't appear in the tree — so you can wrap optional work in a section without
+  cluttering the log when it does nothing.
+- **Re-entering the same title continues the same section.** Opening
+  `model_logging_context("Validation")` twice under the same parent appends to one node
+  rather than creating a duplicate.
+- **Headings only shape the tree.** They don't change which record a log belongs to, so
+  live streaming and the calculation's status are unaffected — a section is purely a way
+  to organise what you write.
+
+> [!tip]
+> Reach for a **string** context to structure *one* calculation's own log into phases,
+> and a **model instance** context (above) to nest a *child calculation's* logs under
+> their parent. They compose: a model section can contain string sections, and vice versa.
+
 For the complete method list, see the [[reference/LexLogger API|LexLogger API reference]].
 
 > [!note]- Migrating from V1?
@@ -110,9 +156,11 @@ For the complete method list, see the [[reference/LexLogger API|LexLogger API re
 
 LexLogger output is rendered in the frontend in real-time:
 
-- **Calculation Log Panel** — a slide-out drawer during calculation showing live Markdown-rendered output as the calculation progresses
-- **Hierarchical Log Tree** — when a parent calculation triggers children, logs are nested in a tree view showing the full execution hierarchy
-- **PDF Export** — the calculation log for any record can be exported as a PDF, useful for compliance documentation and auditing
+- **Calculation Log Panel** — a slide-out drawer during calculation showing live Markdown-rendered output as the calculation progresses, including background calculations after an initial HTTP `202` response
+- **Execution tree** — the left pane lists every node — model instances *and* the string sections above — so you can click straight to the part of the log you care about
+- **Collapsible sections** — in the consolidated log, any section can be folded away; collapsing a heading hides its whole sub-tree, so you can focus on one phase of a long run at a time
+- **PDF Export** — the calculation log for any record can be exported as a PDF that renders just like the on-screen view: headings, tables, fenced code blocks and even strikethrough survive the export, which makes it usable as compliance evidence
+- **Complete subtree export** — download a log together with all of its nested child logs as one PDF by adding `include_descendants=true` to the download request
 - **Rich Rendering** — headings, tables, DataFrames, and code blocks are all rendered with proper formatting and syntax highlighting
 
 See the [[interface/record-detail/index|Record Detail]] page for how logs appear in context.

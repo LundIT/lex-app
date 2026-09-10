@@ -1,132 +1,131 @@
-# `lex_view()` callbacks — the Streamlit ↔ React bridge protocol
+---
+title: lex_view Callbacks
+---
 
-This document is the contract between the Streamlit host (`lex_view()` in
-`lex/lex_app/streamlit/embed.py`) and the embedded React application
-(`src/utils/lexAppBridge.ts` in `process-admin-general-client`). Both sides
-reference it; changes here require a coordinated release.
+`lex_view()` embeds a Lex App page inside a [Streamlit](https://docs.streamlit.io/) app. It has always supported a plain embed; now it can also hand user actions in the embedded page back to your Python script so you can react to them.
 
-Protocol version: **1**. Additive changes do not bump the version; breaking
-changes do. Each side drops messages whose `version` is newer than what it
-supports.
+If you only want an embedded page, call it without callback flags and it behaves like before — a plain iframe that returns `None`. Nothing about existing call sites changes.
 
-## Embedding modes
+If you want Python to react to what the user does in the embedded app, turn on one or more `on_*` flags.
 
-`lex_view(path, ...)` builds the iframe URL (`embed=true` query parameter
-plus the `#embed` fragment) and renders one of:
-
-- **Plain iframe (legacy).** No `on_*` flag set → `components.iframe`;
-  returns `None`. One-directional, no events.
-- **Bidirectional component.** Any of `on_create`, `on_update`, `on_delete`,
-  `on_select`, `on_navigate`, `on_flow_step` set → the `_lex_view_component`
-  custom component mounts the iframe and forwards events back to Python.
-  `lex_view(...)` returns the latest event envelope (or `None` until the
-  first event arrives).
-
-## Child → host events (React → Streamlit)
-
-### Envelope
-
-```json
-{
-  "source": "lex-app",
-  "version": 1,
-  "type": "create | update | delete | select | navigate | flow_step",
-  "ts": 1730000000000,
-  "id": "<ULID-ish unique id>",
-  "payload": { "…type-specific…": "…" }
-}
+```python
+from lex.lex_app.streamlit.embed import lex_view
 ```
 
-- `source` — always `"lex-app"`; the shim ignores everything else.
-- `id` — unique per emission; the shim dedupes on it so Streamlit re-runs do
-  not re-trigger handlers.
-- `ts` — milliseconds since epoch, informational.
+## Basic usage
 
-### Opt-in gating
+```python
+import streamlit as st
+from lex.lex_app.streamlit.embed import lex_view
 
-The React app only emits events the host opted in to. `lex_view()` forwards
-each `on_<type>=True` flag as an `emit_<type>=true` query parameter; the
-bridge snapshots those parameters from the initial URL (they survive
-client-side navigation) and gates every `emitLexEvent` call. Unknown event
-types are forwarded ungated so future types don't need a coordinated
-release.
+event = lex_view("investor", on_select=True)
 
-### Origin gating
+if event and event["type"] == "select":
+    st.write("Selected row IDs:", event["payload"]["ids"])
+```
 
-- The shim only accepts messages whose `event.origin` equals the origin of
-  the embed base URL (`expected_origin`, resolved Python-side from
-  `REACT_APP_URL`/`LEX_FRONTEND_URL`). When no real origin can be resolved
-  (dev/file://), it accepts any origin.
-- The React side posts to the parent origin parsed from `document.referrer`,
-  falling back to `"*"` only when the referrer is empty (dev); production
-  hosts should send a referrer policy that exposes their origin.
+When at least one callback flag is set, `lex_view()` switches from a plain iframe to a bidirectional component and returns the latest **event envelope** (or `None` until the first event arrives). Each time the user acts in the embedded page, Streamlit re-runs your script with the new event as the return value.
 
-### Per-type payloads
+## Callback flags
 
-| type        | payload                                                               |
-| ----------- | --------------------------------------------------------------------- |
-| `create`    | `{ "resource": string, "id": string \| number, "data": object }`      |
-| `update`    | `{ "resource": string, "id": string \| number, "data": object }`      |
-| `delete`    | `{ "resource": string, "id": string \| number, "data": object }`      |
-| `select`    | `{ "resource": string, "ids": Array<string \| number> }` (debounced)  |
-| `navigate`  | `{ "from": string, "to": string }`                                     |
-| `flow_step` | reserved — declared in the type union, not emitted yet                 |
+Turn on only what you need:
 
-(The bridge forwards payloads as-is and performs no schema validation —
-treat fields beyond these as additive.)
+| Flag | Fires when… |
+|---|---|
+| `on_create` | A record is created in the embedded page |
+| `on_update` | A record is updated |
+| `on_delete` | A record is deleted |
+| `on_select` | The grid selection changes |
+| `on_navigate` | The user navigates to another route |
+| `on_flow_step` | A step in a multi-step `flow` completes |
 
-## Theme handshake (host → iframe)
+`on_select` is opt-in for a reason: it drives a Streamlit re-run on *every* grid selection change, which is expensive. The framework only wires the grid's selection callback when you explicitly ask for it.
 
-New in Phase 5 of the LEX Design System adoption: the host keeps the
-embedded app's light/dark mode in sync. Two mechanisms, both driven by the
-`theme` parameter of `lex_view()` (`"light"` — default — or `"dark"`;
-anything else raises `ValueError`):
+## The event envelope
 
-1. **Boot fallback — URL parameter.** The iframe URL carries
-   `?theme=light|dark`. The React app reads it on boot
-   (`getHostBootTheme()` in `lexAppBridge.ts`) and applies it before first
-   paint of the embedded view. Works in both embedding modes.
-2. **postMessage — later changes.** In bidirectional mode the component shim
-   posts, after the iframe loads (and again whenever the host theme
-   changes in a future host dark mode):
+Every event the embedded page sends back is a dict with a stable shape:
 
-   ```json
-   {
-     "source": "lex-app-host",
-     "version": 1,
-     "type": "theme",
-     "payload": { "mode": "light" }
-   }
-   ```
+| Key | Meaning |
+|---|---|
+| `type` | The event kind — `"create"`, `"update"`, `"delete"`, `"select"`, `"navigate"`, or `"flow_step"` |
+| `payload` | Type-specific data (e.g. `{"id": 42}` for create/update, `{"ids": [...]}` for select) |
+| `id` | A unique event ID, used internally to de-duplicate re-runs so your handler doesn't fire twice for the same event |
 
-   The message is posted to the iframe's own origin (never `"*"`). The
-   React side (`subscribeToHostTheme`) validates `source`, `version ≤ 1`,
-   `type`, and `payload.mode ∈ {light, dark}`, checks the sender origin
-   against the referrer-derived parent origin when available, and applies
-   the mode through the react-admin theme — which the LexProvider then
-   propagates to Ant Design and the document (`data-lex-theme` +
-   `body.dark`). The theme is cosmetic, never security-relevant.
+Guard your handler on `event and event["type"] == "..."` — `event` is `None` on the first render before anything has happened.
 
-The host itself has no dark mode today, so it always sends `light`; the
-mechanism exists so host and iframe can never disagree once one is added.
+## Redirect flows (`flow=`)
 
-## Local smoke procedure
+For multi-step workflows, pass a routing table with `flow=`. Each key is `"<resource>/<operation>"` (operation is `create` or `update`); each value is the route to open next. Targets support the `{resource}` and `{id}` template tokens.
 
-1. Run the React app (`yarn start` in process-admin) and a Streamlit page
-   that calls `lex_view("<resource>", on_select=True, theme="light")`.
-2. Verify the iframe URL contains `embed=true`, `emit_select=true` and
-   `theme=light`.
-3. In the iframe's DevTools: `localStorage.setItem('lex.bridge.debug', '1')`
-   → select a row → the console logs the posted `select` envelope and the
-   Streamlit script re-runs with the event as `lex_view`'s return value.
-4. In the host page's DevTools console, the shim posts the `theme` message
-   after iframe load; with `theme="dark"` the embedded app renders dark
-   (body has the `dark` class inside the iframe).
+```python
+event = lex_view(
+    "investor",
+    on_create=True,
+    flow={
+        "investor/create": "/cashflow/{id}/edit",
+        "cashflow/update": "/investor",
+    },
+)
+```
 
-## Versioning policy
+You can also build the table declaratively with `Flow()`, which reads a little better for longer chains:
 
-- Additive fields/event types: no version bump; receivers must ignore
-  unknown fields and, host-side, forward unknown types.
-- Breaking envelope changes: bump `PROTOCOL_VERSION` (shim),
-  `LEX_BRIDGE_VERSION` (React) and this document together; ship the
-  receivers before the senders.
+```python
+from lex.lex_app.streamlit.embed import Flow
+
+flow = (
+    Flow()
+    .after_create("investor", "/cashflow/{id}/edit")
+    .after_update("cashflow", "/investor")
+)
+
+lex_view("investor", on_flow_step=True, flow=flow)
+```
+
+### Staying put after a save
+
+For repeated entry — enter a record, clear the form, enter the next — route to `STAY`
+instead of a path:
+
+```python
+from lex.lex_app.streamlit.embed import STAY, Flow
+
+flow = Flow().after_update("cashflow", STAY)
+```
+
+`STAY` means *don't navigate; stay on this form and clear it*. It exists as a constant
+rather than a bare string so a typo is an error where you wrote it, instead of a redirect
+that quietly never happens.
+
+> [!note] Only `create` and `update` can be routed
+> Writing a `delete` rule raises `FlowError` immediately. The app does emit a
+> record-deleted event, but it has no delete-redirect resolver — so such a rule would be
+> accepted, serialised, shipped, and then ignored. Rejecting it at the call site turns a
+> silent no-op into a message you can act on.
+
+For the simpler single-hop case you don't need a flow table at all — `redirect_after`, `redirect_after_create`, and `redirect_after_update` each take a single route (with the same `{resource}` / `{id}` tokens).
+
+## Choosing a serializer
+
+Use `serializer=` when the embedded view should shape its data with a specific DRF serializer registered on the model:
+
+```python
+lex_view("investor", serializer="InvestorWithFundSerializer")
+```
+
+If the name isn't a serializer registered for that model, the embedded request returns HTTP `400` with a validation error rather than silently falling back.
+
+## Existing embed options still work
+
+All the layout and routing options you already use remain available alongside the callbacks: `hide_toolbar`, `hide_actions`, `redirect_after` / `redirect_after_create` / `redirect_after_update`, `height`, `width`, `scrolling`, `extra_params`, and `base_url`. (In bidirectional mode `width` and `scrolling` are ignored — the component is always full width.)
+
+## Light and dark
+
+You don't need to pass anything. The embedded page takes its light/dark mode from the
+host page and stays in step with Lex App in both directions, without a reload — see
+[[interface/themes|Themes]].
+
+> [!warning] The `theme` argument is superseded
+> `lex_view()` still accepts `theme="light"` / `theme="dark"`, but the embedded app no
+> longer reads it — it follows the host page instead. Passing it has no effect; it is
+> kept so existing call sites don't break.

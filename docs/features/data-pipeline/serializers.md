@@ -72,6 +72,15 @@ This example shows three important patterns:
 > [!warning] PATCH and cross-field validation
 > When a user edits a single cell in the grid, the frontend sends a **PATCH** request containing only that field. In `validate()`, `attrs` won't include the fields the user didn't touch. Always fall back to `self.instance` for the "other" field — otherwise the rule silently passes.
 
+> [!tip] Clearing file fields on update
+> For `FileField` / `ImageField` updates sent as `multipart/form-data`, use:
+>
+> - `""` (empty string) to clear the currently stored file
+> - omitted key to keep the current file
+> - a new upload to replace the current file
+>
+> If the field is required, clearing it still fails validation.
+
 ## More Validation Patterns
 
 Here are additional patterns you can mix and match in your serializers:
@@ -122,8 +131,49 @@ When validation fails, the error message appears directly in the frontend UI —
 > [!note]
 > Computed serializer-only fields work well for display, exports, and detail views. But if a field only exists in the serializer — for example via `SerializerMethodField()` — you can't use it as a row-group or pivot column in the grid. If you need grouping or pivoting, use a real model field.
 
+> [!warning] Credential-shaped fields
+> Fields such as `password`, `secret`, and `*_token` are never included in API
+> responses, even when a serializer exposes all fields. Keep credentials out of
+> model responses rather than relying on the frontend to hide them.
+
 > [!tip] Serializer validation vs. `pre_validation()`
 > Serializer validation and [[features/data-pipeline/lifecycle hooks#`pre_validation()` — Guard Before Save|pre_validation()]] both block invalid data before it's saved — but they run at different layers. Serializer validation runs in the **API layer** (when data arrives via REST), while `pre_validation()` runs in the **model layer** (on every `save()`, regardless of source). If a rule should apply no matter how the model is saved — API, management command, hook, calculation — put it in `pre_validation()`. If it's specific to the REST API (e.g., formatting, permission-aware checks), use a serializer.
+
+## Foreign keys read as names, not IDs
+
+When a model points at another model through a `ForeignKey`, the raw API value for that
+field is the linked record's database id — a number. On its own, a column showing
+`1042` isn't very useful to read.
+
+So alongside the raw id, every serialized row **also** carries a companion value with the
+linked record's readable name. For a `fund` foreign key you get both:
+
+```json
+{
+  "fund": 1042,
+  "fund__short_description": "Growth Opportunities Fund"
+}
+```
+
+The grid uses `fund__short_description` to *display* the column, while filtering, sorting,
+and editing still run against the real `fund` id underneath. You don't configure anything
+for this — it happens for every foreign key automatically, and the raw id is never
+altered, so existing integrations keep working unchanged.
+
+The display text comes straight from the linked model's `__str__`. That method is your
+control point: define it to return whatever a person should see for that record.
+
+```python
+class Fund(LexModel):
+    name = models.CharField(max_length=200)
+    vintage_year = models.IntegerField()
+
+    def __str__(self):
+        return f"{self.name} ({self.vintage_year})"
+```
+
+With this in place, any grid that links to a `Fund` shows *"Growth Opportunities Fund
+(2021)"* instead of a bare id — everywhere, without touching the serializer.
 
 ## Multiple Serializer Views
 
@@ -163,6 +213,9 @@ InvestorCashflow.api_serializers = {
 
 > [!note] The `id` field is always present
 > When you override `api_serializers["default"]`, the framework always includes the model's primary key as `id` in the serialized output — even if your `Meta.fields` omits it. Row navigation, edit URLs, and the CRUD loading overlay all depend on this field.
+
+> [!tip] Foreign keys now come with a readable companion value
+> In list and detail responses, foreign-key fields keep their raw ID (`team: 79`) and also include a second key with the related record's label (`team__short_description: "Growth Fund"`). That gives custom frontends and integrations something human-readable to show without losing the real ID needed for edits, filters, and writes.
 
 ### Renaming the framework serializer
 

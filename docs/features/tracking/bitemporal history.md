@@ -223,12 +223,16 @@ system_at_feb = get_queryset_as_of(HistoricalEmployee, feb_1)
 
 ## The REST API
 
-The history endpoint supports time-travel via the `as_of` query parameter:
+Both the main list endpoint and the history endpoint support time-travel via the `as_of` query parameter:
 
 ```
-GET /api/employee/42/history/              → all Level 1 versions
-GET /api/employee/42/history/?as_of=2026-02-01T00:00:00Z  → Level 2 snapshot at that system time
+GET /api/employee/?as_of=2026-02-01T00:00:00Z             → employee list as it existed then
+GET /api/employee/42/history/                             → all Level 1 versions
+GET /api/employee/42/history/?as_of=2026-02-01T00:00:00Z → Level 2 snapshot at that system time
 ```
+
+Use a normal ISO timestamp. `Z` or an explicit offset are the clearest
+options, but a naive timestamp is also accepted and treated as UTC.
 
 Each response entry includes:
 
@@ -247,6 +251,15 @@ Each response entry includes:
 ```
 
 The `snapshot` contains all field values at that version, serialized through your model's default serializer. The `system_history` array contains the Level 2 meta records for that history row.
+
+> [!important] Always send `as_of` in UTC
+> The `as_of` value is interpreted as **UTC**. Send an explicit designator — a trailing
+> `Z` (as above) or an offset like `+02:00` — so the instant is unambiguous. A value with
+> no timezone (`2026-02-01T09:00:00`) is read as UTC, *not* as your local wall-clock time,
+> so a naive local time can land you on the wrong side of an edit. The application's own
+> **As-Of** control already sends UTC for you; this only matters when you call the endpoint
+> directly. For the same reason, every timestamp the API *returns* carries a `Z` — parse it
+> as UTC and convert to local time for display.
 
 ## In the Frontend
 

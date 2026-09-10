@@ -63,6 +63,7 @@ You don't call any history API. Every time Django's ORM executes a `save()` or `
 - `Model.objects.create()`
 - QuerySet `.update()` (with bulk history enabled)
 - Admin changes, API calls, lifecycle hooks — anything that touches the ORM
+- Calculation status callbacks and recovery sweeps, so async terminal states (like `SUCCESS`, `ERROR`, or `ABORTED`) appear in the same history stream — with the recovery reason recorded on the entry
 
 The history row is created in the **same database transaction** as the change itself, so it's impossible for a change to succeed without its history being recorded.
 

@@ -52,6 +52,8 @@ lex streamlit
 > [!tip]
 > PyCharm's Streamlit run configuration handles all environment variables automatically. We recommend using it for local development.
 
+`lex streamlit` starts the Streamlit app and the authentication proxy together. Locally, the defaults are enough. In HTTPS deployments, set a fixed `SESSION_SECRET`; if you run multiple proxy replicas, set a shared `TOKEN_REDIS_URL` / `REDIS_URL` too so dashboard sessions survive restarts and load balancing.
+
 ## What's Next?
 
 Now that your app is running, explore the [[features/index|features]] to see what Lex App gives you out of the box. If you want a guided walkthrough, try the [[tutorial/index|TeamBudget Tutorial]].

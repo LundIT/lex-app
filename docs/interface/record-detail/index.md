@@ -47,8 +47,12 @@ Above the tabs, a toolbar gives you quick access to:
 | **Edit** | Jump to the edit form for this record |
 | **Export to PDF** | Download the current Summary tab as a PDF document |
 
+<!-- 📸 TODO: screenshot of the record detail toolbar — preset selector, column
+     toggle, Edit, Export to PDF. Save as images/record-detail/record-detail-toolbar.jpeg
+     and restore the callout below.
 > [!example]- 📸 Screenshot — Record detail toolbar
-> ![Record detail toolbar showing preset selector, column toggle, edit button, and PDF export](../images/record-detail/record-detail-toolbar.jpeg)
+> ![Record detail toolbar](../../images/record-detail/record-detail-toolbar.jpeg)
+-->
 
 ## Customizing Tab Labels
 

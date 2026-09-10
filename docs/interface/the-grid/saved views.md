@@ -50,7 +50,6 @@ These are views **you** create. Type a name in the view selector search bar and 
 
 That's it. Your view appears under **My Presets** and is available from now on.
 
-<!-- 📸 SCREENSHOT: View selector dropdown showing "System Views" and "My Presets" groups, with a "Press Enter to create" prompt -->
 
 ## Switching Views
 

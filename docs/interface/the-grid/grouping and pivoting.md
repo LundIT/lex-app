@@ -46,7 +46,6 @@ Add more columns to create nested groups. Group by Team, then by Category within
 
 Drag columns in the group bar to reorder the hierarchy. Remove a group level by dragging it back to the column area.
 
-<!-- 📸 SCREENSHOT: Multi-level grouping with two group columns in the group bar -->
 
 ### Aggregation Functions
 

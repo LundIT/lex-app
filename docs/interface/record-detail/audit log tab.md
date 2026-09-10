@@ -23,7 +23,7 @@ The Audit Log tab displays a grid of all API operations that affected the curren
 | **Actions** | Quick view link to inspect the full entry |
 
 > [!example]- 📸 Screenshot — Audit log with expanded JSON payload
-> ![Audit Log tab showing operations grid with expandable JSON payload](../images/record-detail/audit-log-tab.jpeg)
+> ![Audit Log tab showing operations grid with expandable JSON payload](../../images/record-detail/audit-log-tab.jpeg)
 
 ## The Status Lifecycle
 
@@ -35,7 +35,7 @@ flowchart LR
     A -->|operation fails| C["🔴 Failure"]
 ```
 
-- **Pending** — the operation has been requested but not yet completed
+- **Pending** — the operation has been requested but not yet completed (for HTTP `202` calculations, this can remain until background work finishes)
 - **Success** — the operation completed successfully; payload updated to reflect final state
 - **Failure** — the operation failed; the error traceback is stored for investigation
 

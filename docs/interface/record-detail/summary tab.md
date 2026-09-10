@@ -4,6 +4,17 @@ title: Summary Tab
 
 The Summary tab is the first thing you see when opening a record. Every field is displayed as a labeled card — clean, readable, and organized by the layout you choose.
 
+## What Leads the Page
+
+The record's own content is at the top, under its own heading. The framework's
+bookkeeping — `Id`, `Created At`, `Edited At`, `Created By`, `Edited By` — is collected
+into a collapsed **Record details** section instead.
+
+That ordering is the point. Those five fields used to come first, because that is the
+order the model's metadata arrives in, which meant the most valuable rows on screen
+described the plumbing and the record's own content began below the fold. They are
+demoted, not hidden: open **Record details** and they are all there.
+
 ## Field Cards
 
 Each field gets its own card with a label and value. Fields are rendered intelligently based on their type:
@@ -18,7 +29,7 @@ Each field gets its own card with a label and value. Fields are rendered intelli
 | **JSON** | Formatted, expandable view |
 
 > [!example]- 📸 Screenshot — Summary tab with field cards
-> ![Summary tab showing field cards in a 2-column layout](../images/record-detail/summary-tab.jpeg)
+> ![Summary tab showing field cards in a 2-column layout](../../images/record-detail/summary-tab.jpeg)
 
 ## Column Layout
 
@@ -65,3 +76,12 @@ This is especially useful for:
 Click the **Edit** button in the toolbar to switch to the edit form. All editable fields become input fields — text boxes, dropdowns, date pickers — pre-populated with the current values. Fields you don't have [[features/access-and-ui/permissions|permission]] to modify appear as read-only.
 
 After saving, you return to the Summary tab with the updated values reflected immediately.
+
+### File fields
+
+A file field shows the current attachment with controls to work with it:
+
+- **Download** the existing file, or **replace** it by choosing a new one.
+- **Remove** it by clearing the field and saving — the attachment is deleted and the field
+  is left empty. (Leaving a file field untouched keeps the current file; only an explicit
+  remove or replace changes it.)

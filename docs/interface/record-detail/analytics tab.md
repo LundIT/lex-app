@@ -44,7 +44,7 @@ Because dashboards are powered by Streamlit, the possibilities are wide. Common 
 All of these run live – they compute from the current data, so they're always up to date.
 
 > [!example]- 📸 Screenshot — Analytics tab with Streamlit dashboard
-> ![Analytics tab showing a record-level Streamlit dashboard](../images/record-detail/analytics-tab.jpeg)
+> ![Analytics tab showing a record-level Streamlit dashboard](../../images/record-detail/analytics-tab.jpeg)
 
 ## When the Analytics Server Is Offline
 

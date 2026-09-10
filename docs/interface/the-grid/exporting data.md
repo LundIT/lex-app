@@ -6,12 +6,19 @@ Data that lives only inside an application isn't fully useful. Stakeholders need
 
 ## How Export Works
 
-Click the **Export** button in the toolbar. The system generates a file that mirrors your current grid view:
+Click the **Export** button above the table. (It used to live only in the right-click
+menu, which meant it was reachable only by people who already knew it was there.) The system generates a file that mirrors your current grid view:
 
 - **Filters applied?** Only filtered rows are exported.
 - **Columns grouped?** The group hierarchy is preserved in the file.
 - **Pivot mode active?** The cross-tabulated layout is exported as-is.
-- **Rows selected?** Option to export only the selected subset.
+- **Rows selected?** Exactly those rows are exported — nothing else.
+
+Selection is the whole contract, and there is no mode to switch: with nothing selected
+you get the table as the grid is currently showing it, filters, sort, grouping and pivot
+carried in; with rows selected you get precisely those rows. The button's tooltip names
+which of the two is about to happen, which matters at the moment of the click — a file
+that turns out to hold the wrong rows is discovered far too late.
 
 The export runs server-side, so even large datasets (tens of thousands of rows) export reliably without browser memory issues.
 
@@ -77,3 +84,9 @@ If you need a subset, select specific rows in the grid (click to select, `Shift+
 
 > [!tip]
 > Combine selection with [[interface/the-grid/filtering and sorting|filters]] for precision: filter down to the relevant records, select a handful, and export just those.
+
+## Datetimes in Excel exports
+
+Excel has no timezone type. When your data contains datetime values, the exported workbook shows them in your **browser's local timezone** — the same time you see in the grid — rather than UTC. If the exported file is opened by someone in a different timezone, the digits they see represent the original exporter's local time.
+
+CSV exports are unaffected: they always include UTC offsets (e.g. `2026-07-14T11:00:00+02:00`).

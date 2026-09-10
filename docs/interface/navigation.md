@@ -15,7 +15,6 @@ Each group can have a custom icon and display name. For example, a fund manageme
 - 💶 **Expenses** — financial records
 - 📊 **Reports** — calculated summaries
 
-<!-- 📸 SCREENSHOT: Sidebar showing several model groups with icons, one group expanded -->
 
 The sidebar collapses to icons on smaller screens, giving you more room for the grid while keeping navigation accessible.
 
@@ -32,7 +31,6 @@ Home › Teams & People › Employee › #42
 
 Click any breadcrumb to jump back to that level — from a record detail page back to the table, or from a table back to the home screen.
 
-<!-- 📸 SCREENSHOT: Breadcrumb showing Home > Model Group > Model > Record -->
 
 ## Global Search
 
@@ -40,7 +38,6 @@ The search bar at the top of the sidebar lets you find any model instantly. Star
 
 This is especially useful in large projects with dozens of models: instead of scrolling through the sidebar, just type the first few letters.
 
-<!-- 📸 SCREENSHOT: Search field with suggestions appearing -->
 
 ## Page Transitions
 

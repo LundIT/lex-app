@@ -34,15 +34,13 @@ For text columns, simply start typing in the filter input. The grid filters as y
 
 ### Date Filters
 
-Date columns use a calendar picker for precision. Select a range with "between" to isolate a specific period — like all expenses from Q1 2026. The built-in date picker handles timezones automatically.
+Date columns use a calendar picker for precision. Select a range with "between" to isolate a specific period — like all expenses from Q1 2026. When you enter a date without a time, Lex App treats it as the whole day rather than a single instant. The built-in date picker handles timezones automatically.
 
-<!-- 📸 SCREENSHOT: Date filter open showing a date range selection -->
 
 ### Foreign Key Filters
 
 When a column references another model (like an Employee's Team), the filter shows a searchable dropdown of all related records. Select one or more to narrow the view.
 
-<!-- 📸 SCREENSHOT: Foreign key filter dropdown showing a list of teams -->
 
 ## Multi-Column Sorting
 

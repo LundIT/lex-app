@@ -69,50 +69,77 @@ Streamlit dashboards run as a separate process alongside your Lex App applicatio
 > [!tip]
 > We recommend running Streamlit from your IDE (e.g. PyCharm) using the `lex streamlit` command, which handles environment configuration automatically.
 
+For production-style deployments, give the Streamlit proxy a fixed `SESSION_SECRET`. If you run more than one proxy replica, also use a shared `TOKEN_REDIS_URL` / `REDIS_URL` so users don't lose their dashboard session when a request lands on a different replica.
+
+## Embedding Lex App in a Dashboard
+
+When your dashboard needs Lex App controls, you can embed them directly instead
+of rebuilding the UI in Streamlit. Put your dashboard code in
+`_streamlit_structure.py` at your project root and expose a `main()` function.
+
+Use one of the flat `lex_*` calls for a single control:
+
+```python
+from lex.lex_app.streamlit import lex_calculation
+
+lex_calculation("salesreport", pk=1, title="Sales report")
+```
+
+For several controls on one page, group them in one `lex_widgets()` block. They
+share one embedded runtime, and keys are derived automatically from the call
+site:
+
+```python
+from lex.lex_app.streamlit import lex_widgets
+
+with lex_widgets() as page:
+    page.calculation("salesreport", pk=1)
+    page.calculation_log_tree("salesreport", pk=1)
+```
+
+Use [[features/access-and-ui/lex_view callbacks|`lex_view()`]] when you want to
+embed a complete Lex App route, such as a table or record form.
+
 ## Tips
 
 - Use `st.cache_data` for expensive queries to keep dashboards responsive
 - Use `st.columns()` for side-by-side layouts
 - Any Streamlit widget works — `st.plotly_chart()`, `st.map()`, `st.selectbox()`, etc.
 - Record-level dashboards have full access to `self` and can query related models
+- Keep `st.*` calls inside `main()` (or another function it calls); the dashboard module is imported before Streamlit renders the page.
 
 ## Federated Authentication
 
-When a dashboard is embedded in the Lex App frontend, the user's access token is handed to the auth proxy on the iframe's first request and immediately exchanged for a session cookie — the proxy then redirects to the same view without it, so the token does not linger in the address bar, in browser history, or in the `Referer` of anything the page loads. This enables:
+When a dashboard is embedded in the Lex App frontend, the user's access token is handed to the Streamlit proxy on the iframe's first request. The proxy immediately turns it into a session cookie and redirects to the same view without the token, so it doesn't sit in the address bar, browser history, or `Referer` headers. This enables:
 
 - **No re-authentication** — the user doesn't need to log in again for Streamlit
 - **Identity traceability** — actions in the dashboard are linked to the user's Keycloak identity
 - **Access control** — the dashboard can use the token to call the Lex App API with the user's permissions
+- **Longer-lived dashboards** — the proxy refreshes tokens and keeps disconnected Streamlit sessions around long enough for normal re-authentication or network blips
 
-The token exchange is handled automatically by the `StreamlitIframe` component — no developer configuration needed beyond defining the dashboard methods on your models.
+The token exchange is handled automatically — no developer configuration needed beyond defining the dashboard methods on your models.
 
-### Loading and caching
+### Loading and Caching
 
-A dashboard's frontend is a large, code-split bundle: Streamlit ships several hundred JavaScript chunks and eagerly preloads over a hundred of them on first paint. The auth proxy serves that bundle itself, compressed and marked immutable, and does **not** put it behind authentication — it is package content from the installed Streamlit release, identical for every deployment, with no application data in it. First load is a few hundred kilobytes; afterwards the browser cache serves it.
-
-Everything that *is* specific to your deployment stays authenticated: the dashboard page, the WebSocket carrying its data, uploads, and anything served under `/media/`.
+Streamlit's frontend is a large, code-split bundle. The proxy serves those Streamlit package assets directly, compressed and cacheable, and leaves anything specific to your app authenticated — the dashboard page, WebSocket data, uploads, and `/media/` files.
 
 > [!note]
-> If a dashboard ever reports `Failed to fetch dynamically imported module`, it means a lazily-loaded chunk could not be fetched — usually a stale cached page asking for a previous release's files. A hard reload resolves it.
+> If a dashboard ever reports `Failed to fetch dynamically imported module`, it usually means the browser has a stale cached page that points at files from an older Streamlit release. A hard reload resolves it.
 
-### Staying signed in
+### Staying Signed In
 
-Access tokens are short-lived, and a dashboard is often left open far longer than one lasts. The framework renews ahead of every expiry for as long as the page is open, so a dashboard someone comes back to after lunch keeps working — nothing to configure, and nothing for the user to click.
+Access tokens are short-lived, and dashboards often stay open longer than a token lasts. Lex App renews the token in the background through the proxy, without reloading the dashboard, so widgets and `st.session_state` keep their state.
 
-Renewal always goes through the auth proxy, which is the only component that holds the refresh token. Your dashboard code never sees or manages tokens; read the current user from `st.session_state["user_info"]` and their permissions from `st.session_state["permissions"]` as usual.
+Sessions still follow Keycloak's maximum lifetime, and revoked Keycloak sessions stop working immediately. When renewal really can't continue, the embedded dashboard asks the surrounding app to re-authenticate and returns the user to the same dashboard view.
 
-Renewal is also invisible in a stricter sense: **the dashboard is never reloaded to renew it.** The frontend hands each new token to the proxy over a background request, so nothing in your dashboard re-runs, no widget resets, and `st.session_state` is untouched — a form half-filled in stays half-filled in.
+Two deployment settings decide whether dashboard sessions survive restarts and load balancing:
 
-Nothing to configure: the proxy accepts that handoff from the instance's own hostname, which it reads from `DOMAIN_HOSTED` — already required on every deployed instance. Override with `REACT_APP_URL` / `LEX_FRONTEND_URL` only if your frontend is served from a different host.
+- Session cookies are signed with a key derived from `DJANGO_SECRET_KEY` unless you set `SESSION_SECRET` explicitly. Because that key is already stable across restarts and identical on every replica, dashboard sessions survive a redeploy without any extra configuration. Set `SESSION_SECRET` only when you want to control the value yourself.
+- `TOKEN_REDIS_URL` (or `REDIS_URL`) is required when you run more than one proxy replica. The in-memory token store is only safe for a single process.
 
-Sessions do not live forever: Keycloak's SSO maximum lifetime still applies, and a session revoked in Keycloak stops working immediately. When renewal genuinely can't succeed, the embedded dashboard asks the surrounding app to re-authenticate, and a standalone one offers a sign-in link. Either way you are returned to the view you were on, not to the application's first page.
-
-Two deployment settings decide whether a session survives at all:
-
-- Session cookies need a key that is stable across restarts and shared by every replica. The proxy derives one from `DJANGO_SECRET_KEY`, so there is normally nothing to set; `SESSION_SECRET` overrides it if you want to choose the key yourself. With neither, cookies are signed per-process and a restart logs everyone out — the proxy warns and starts anyway.
-- `TOKEN_REDIS_URL` (or `REDIS_URL`) is required beyond a single replica, and that replica needs session affinity — Streamlit's own session state is held in the process the browser is connected to.
-
-See [[reference/Environment Variables]] for both, along with `SESSION_SAMESITE`, which has to be `none` whenever the frontend and the dashboard are not on the same registrable domain.
+The token exchange is handled automatically by the `StreamlitIframe` component — no developer configuration needed beyond defining the dashboard methods on your models.
+The session keeps refreshing while the dashboard is open, including across normal Streamlit script reruns.
+See [[reference/Environment Variables]] for the full list, including `SESSION_SAMESITE` for cross-site iframe deployments.
 
 ## In the Frontend
 
@@ -124,3 +151,7 @@ Dashboards appear in two places:
 If the Streamlit server is unavailable, the UI shows a graceful fallback with a "Retry Connection" button. The rest of the application continues to work normally.
 
 See [[interface/record-detail/analytics tab|Analytics Tab]] for the full user-facing documentation.
+
+## Going the Other Way: Embedding Lex App in Streamlit
+
+The sections above embed Streamlit *inside* Lex App. You can also do the reverse — embed a Lex App page inside a Streamlit script with `lex_view()`, and have Python react to create/update/select/navigation events. See [[features/access-and-ui/lex_view callbacks]].

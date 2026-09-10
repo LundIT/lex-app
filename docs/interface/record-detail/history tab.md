@@ -20,7 +20,7 @@ The columns include both history-tracking fields and all of the model's own fiel
 You can [[interface/the-grid/filtering and sorting|filter and sort]] this grid like any other — for example, filter by `Edited By` to see all changes made by a specific person, or sort by date to trace the evolution of the record.
 
 > [!example]- 📸 Screenshot — History grid with version rows
-> ![History tab showing an AG Grid of all historical versions](../images/record-detail/history-tab.jpeg)
+> ![History tab showing an AG Grid of all historical versions](../../images/record-detail/history-tab.jpeg)
 
 ## The As-Of Control
 
