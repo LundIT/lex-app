@@ -195,6 +195,60 @@ jobs:
           echo '__version__ = "${{ steps.version.outputs.VERSION }}"' > lex/_version.py
           cat lex/_version.py
 
+      # The frontend is published separately, as lex-app-frontend on PyPI, and is
+      # installed here so it ships inside the lex-app wheel exactly as it does
+      # today. Which version comes from frontend-version.txt: an exact version,
+      # or `latest` (the default).
+      #
+      # This runs BEFORE the build, because the bundle has to be in the tree
+      # for setuptools to package it — see "lex.react" in pyproject.toml.
+      - name: Vendor the published frontend
+        id: frontend
+        env:
+          BODY: ${{ github.event.release.body }}
+        run: |
+          set -euo pipefail
+          # Prefer the version the prerelease gate already resolved and
+          # recorded. frontend-version.txt usually says `latest`, and resolving
+          # that again here would ship whatever became newest between the gate
+          # and the promotion — a different frontend from the one on the
+          # release body that a human read before promoting.
+          PINNED=$(printf '%s' "$BODY" \
+            | sed -n 's/.*<!-- *lex:frontend-version *\([^ >]*\) *-->.*/\1/p' | head -1)
+          if [ -n "${PINNED}" ]; then
+            echo "Using the version recorded on the release: ${PINNED}"
+            VERSION=$(python .github/scripts/vendor_frontend.py \
+              --version "${PINNED}" --print-version | tail -1)
+          else
+            # No marker: a manual release cut, or a gate that could not
+            # resolve. Resolve now and say so.
+            echo "::notice::No lex:frontend-version on the release; resolving now."
+            VERSION=$(python .github/scripts/vendor_frontend.py --print-version | tail -1)
+          fi
+          echo "VERSION=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      # `latest` is not recoverable from a git tag, so the resolved version is
+      # recorded where it survives: inside the bundle (and so inside the wheel)
+      # by the script above, and on the release itself here. Without this an
+      # unpinned release is unattributable six months later, which is the
+      # problem the provenance work exists to prevent.
+      - name: Record the frontend version on the release
+        if: ${{ github.event_name == 'release' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.release.tag_name }}
+          FRONTEND: ${{ steps.frontend.outputs.VERSION }}
+        run: |
+          set -euo pipefail
+          BODY=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body --jq '.body')
+          if printf '%s' "$BODY" | grep -q 'lex:frontend-version'; then
+            echo "Already recorded on $TAG — leaving it alone."
+            exit 0
+          fi
+          printf '%s\n\n<!-- lex:frontend-version %s -->\n' "$BODY" "$FRONTEND" > body.md
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file body.md
+          echo "Recorded lex-app-frontend $FRONTEND on $TAG."
+
       - name: Build sdist and wheel
         run: python -m build
 
@@ -206,3 +260,17 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           password: ${{ secrets.PYPI_API_TOKEN }}
+
+      # Publishing and walking away meant a wheel missing its frontend bundle
+      # would be found by a customer rather than by us. This installs the exact
+      # version from PyPI into a throwaway environment and checks it contains
+      # what it should. PyPI indexing lags publication, so the install retries.
+      #
+      # It runs AFTER publication, so failing cannot unpublish anything — the
+      # point is to find out within minutes instead of days. It is a hard
+      # failure deliberately: a red release is the signal.
+      - name: Smoke-test the published wheel
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        run: |
+          python .github/scripts/smoke_published_wheel.py \
+            --version "${{ steps.version.outputs.VERSION }}"

@@ -103,6 +103,12 @@ jobs:
     permissions:
       contents: write   # edit the prerelease body
     steps:
+      # Needed by the frontend-resolution step at the end of this job.
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
       - name: Append lex:gate-passed marker to the prerelease body
         env:
           # GITHUB_TOKEN is fine: editing a release body fires only
@@ -130,6 +136,38 @@ jobs:
           } > notes.md
           gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file notes.md
           echo "Stamped lex:gate-passed on $TAG — promote it to ship."
+
+      # Resolve the frontend ONCE, here, and record it. frontend-version.txt
+      # usually says `latest`, which would otherwise resolve AGAIN at publish
+      # time — so the version that ships would be whatever happened to be
+      # newest at that later moment, chosen by nobody and seen by nobody.
+      #
+      # Stamping it on the prerelease body makes it a visible decision: whoever
+      # promotes can read which frontend they are about to ship, and
+      # pip_publish.yml vendors exactly that version instead of re-rolling.
+      #
+      # Not fatal. An unresolvable frontend is worth a warning, but the gate has
+      # already passed and the backend is releasable without this.
+      - name: Resolve and record the frontend version
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -uo pipefail
+          VERSION=$(python .github/scripts/vendor_frontend.py --resolve-only | tail -1)
+          if [ -z "${VERSION}" ]; then
+            echo "::warning title=Frontend version not pinned::Could not resolve a frontend version for $TAG; pip_publish.yml will resolve it at publish time instead."
+            exit 0
+          fi
+          BODY=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body --jq '.body')
+          if printf '%s' "$BODY" | grep -q 'lex:frontend-version'; then
+            echo "Already recorded on $TAG — leaving it alone."
+            exit 0
+          fi
+          printf '%s\n\n<!-- lex:frontend-version %s -->\n' "$BODY" "$VERSION" > pinned.md
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file pinned.md
+          echo "Recorded lex-app-frontend $VERSION on $TAG."
 
   # ── RED: delete the prerelease AND its tag so the version is reclaimed.
   #    Uses only GITHUB_TOKEN + contents:write — no PAT, no org scope. ────
@@ -219,6 +257,12 @@ jobs:
           token: ${{ secrets.FRONTEND_REPO_TOKEN }}
           path: pac
           fetch-depth: 0   # a commit RANGE is the input; a shallow clone cannot answer
+          fetch-tags: true   # the range is a pair of PAC TAGS now, not shas.
+                             # fetch-depth: 0 brings branch history but does
+                             # not guarantee tags; without them
+                             # `git log v1.10.0..v1.11.0` fails with a bad
+                             # revision, degrading every release to a gap
+                             # for a reason nobody would look for.
 
       # Reports, never fails — a missing range must not turn a release red.
       # Runs before drafting so the person promoting the prerelease sees the
