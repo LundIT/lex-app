@@ -1,7 +1,7 @@
 ---
 title: "Docs restructure — design and gap register"
 date: 2026-09-10
-status: implemented (restructure), open (register)
+status: implemented (restructure and figures), open (2 register items)
 ---
 
 # Docs restructure — design and gap register
@@ -79,8 +79,8 @@ Blocking-first, then newest. Status as of 2026-09-10.
 | 3 | `access-and-dashboards/widgets` | `WidgetPage`, `WidgetSpecError`, `lex_calculation_log`, `lex_calculation_log_tree` exported and undocumented — the 2.2.0 flagship | **done** |
 | 4 | `calculations/scheduled calculations` | Written in lex-app under a mirror-managed path; guard-rejected, never published | **done** |
 | 5 | `access-and-dashboards/embedding` | Planned | **declined** — `lex_view callbacks` and `streamlit dashboards` already cover both directions |
-| 6 | Screenshots for the new pages | Placeholders left as `📸 TODO` | open |
-| 7 | Record-detail toolbar screenshot | Placeholder commented out since May | open |
+| 6 | Screenshots | 9 placeholders | **7 done** — record page + 4 tabs, the grid, table settings, `lex --help`; `deploying` got a mermaid diagram instead |
+| 7 | Analytics tab + widgets figures | Need a Streamlit dashboard in the e2e project **and** `lex streamlit` in the harness's webServer list | blocked, recorded on both pages |
 | 8 | `reference/` completeness sweep | Not yet audited name-by-name against `__all__` and the env-var list | open |
 | 9 | Backup and restore | Named as absent; no framework-side facts verified yet, so not written | open |
 
