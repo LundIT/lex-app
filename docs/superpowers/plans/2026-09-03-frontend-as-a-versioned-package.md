@@ -4,7 +4,7 @@
 
 **Goal:** Ship the LEX frontend as a versioned package that lex-app depends on by name, so a release's frontend identity is a version pin in plain text instead of an unlabelled 6.3 MB bundle committed into git.
 
-**Architecture:** One publish job in PAC emits two artifacts from one version number — an npm package (the version line the team asked for, and the artifact JS consumers can use) and a companion Python wheel (`lex-frontend`, which is what lex-app actually depends on). lex-app pins that wheel in `requirements.txt`; `settings.py` resolves the bundle from the installed package, falling back to the in-tree copy so nothing breaks mid-migration. The release-notes pipeline then reads the pin at two tags and takes `git log` between PAC's own tags, which retires the manifest, the guard and all of the gap machinery for new releases.
+**Architecture:** One publish job in PAC emits two artifacts from one version number — an npm package (the version line the team asked for, and the artifact JS consumers can use) and a companion Python wheel (`lex-app-frontend`, which is what lex-app actually depends on). lex-app pins that wheel in `requirements.txt`; `settings.py` resolves the bundle from the installed package, falling back to the in-tree copy so nothing breaks mid-migration. The release-notes pipeline then reads the pin at two tags and takes `git log` between PAC's own tags, which retires the manifest, the guard and all of the gap machinery for new releases.
 
 **Tech Stack:** Node 20 / yarn 1.22 / Vite (PAC), Python 3.12 / setuptools (both wheels), GitHub Packages npm registry, PyPI, GitHub Actions.
 
@@ -56,11 +56,11 @@ wherever a task below writes `1.10.0`. It is iterative, which is what the 2026-0
 
 | Path | Responsibility |
 |---|---|
-| `packaging/pyproject.toml` | Declares the `lex-frontend` wheel. Nothing but packaging. |
-| `packaging/lex_frontend/__init__.py` | The wheel's only code: `build_path()` returns the bundle directory. |
+| `packaging/pyproject.toml` | Declares the `lex-app-frontend` wheel. Nothing but packaging. |
+| `packaging/lex_app_frontend/__init__.py` | The wheel's only code: `build_path()` returns the bundle directory. |
 | `packaging/README.md` | What the wheel is, for the PyPI project page. |
 | `.github/workflows/publish-frontend.yml` | The one publish job: gate → version → build → npm → wheel → tag. |
-| `scripts/assemble_wheel.py` | Copies `build/` into `packaging/lex_frontend/build/` and stamps the version. |
+| `scripts/assemble_wheel.py` | Copies `build/` into `packaging/lex_app_frontend/build/` and stamps the version. |
 
 **Modified in PAC:**
 
@@ -75,7 +75,7 @@ wherever a task below writes `1.10.0`. It is iterative, which is what the 2026-0
 | Path | Change |
 |---|---|
 | `lex/lex_app/settings.py` | `REACT_APP_BUILD_PATH` resolves the installed package, falling back in-tree. |
-| `requirements.txt` | Pin `lex-frontend==1.10.0`. This pin *is* the provenance record. |
+| `requirements.txt` | Pin `lex-app-frontend==1.10.0`. This pin *is* the provenance record. |
 | `pyproject.toml` | Drop `"lex.react" = ["**/*"]` (Task 12). |
 | `.github/scripts/release_notes/ranges.py` | Read the pin at a ref; resolve the range from PAC tags. |
 | `.github/scripts/release_notes/__main__.py` | Pass PAC tags rather than shas. |
@@ -105,7 +105,7 @@ import pkg from '../../package.json'
 describe('package identity', () => {
   it('is publishable', () => {
     expect(pkg.private).toBeUndefined()
-    expect(pkg.name).toBe('@excellencecloudgmbh/lex-frontend')
+    expect(pkg.name).toBe('@excellencecloudgmbh/lex-app-frontend')
   })
 
   it('carries a real semver version that continues the existing tag line', () => {
@@ -140,7 +140,7 @@ In `package.json`, replace the first lines:
 
 ```json
 {
-  "name": "@excellencecloudgmbh/lex-frontend",
+  "name": "@excellencecloudgmbh/lex-app-frontend",
   "version": "1.10.0",
   "files": ["build"],
   "publishConfig": {
@@ -198,7 +198,7 @@ sources to anyone who can read the registry."
 ## Task 2: The wheel's only code — locating the bundle
 
 **Files:**
-- Create: `packaging/lex_frontend/__init__.py` (PAC)
+- Create: `packaging/lex_app_frontend/__init__.py` (PAC)
 - Create: `packaging/pyproject.toml` (PAC)
 - Create: `packaging/README.md` (PAC)
 - Test: `packaging/tests/test_build_path.py` (PAC)
@@ -219,11 +219,11 @@ from pathlib import Path
 
 import pytest
 
-import lex_frontend
+import lex_app_frontend
 
 
 def test_build_path_returns_a_real_directory():
-    path = lex_frontend.build_path()
+    path = lex_app_frontend.build_path()
     assert isinstance(path, Path)
     assert path.is_dir(), f"{path} is not a directory"
 
@@ -231,18 +231,18 @@ def test_build_path_returns_a_real_directory():
 def test_the_bundle_contains_an_index_html():
     # The SPA entry point. Its absence means the wheel was assembled from an
     # empty or partial build, which must not pass as a working package.
-    assert (lex_frontend.build_path() / "index.html").is_file()
+    assert (lex_app_frontend.build_path() / "index.html").is_file()
 
 
 def test_the_version_is_importable_and_matches_the_distribution():
     from importlib.metadata import version
-    assert lex_frontend.__version__ == version("lex-frontend")
+    assert lex_app_frontend.__version__ == version("lex-app-frontend")
 
 
 def test_build_path_raises_when_the_bundle_is_missing(monkeypatch, tmp_path):
-    monkeypatch.setattr(lex_frontend, "_PACKAGE_DIR", tmp_path)
+    monkeypatch.setattr(lex_app_frontend, "_PACKAGE_DIR", tmp_path)
     with pytest.raises(FileNotFoundError, match="bundle is missing"):
-        lex_frontend.build_path()
+        lex_app_frontend.build_path()
 ```
 
 - [ ] **Step 2: Run it to confirm it fails**
@@ -251,11 +251,11 @@ def test_build_path_raises_when_the_bundle_is_missing(monkeypatch, tmp_path):
 cd packaging && python -m pytest tests/test_build_path.py -q
 ```
 
-Expected: FAIL — `ModuleNotFoundError: No module named 'lex_frontend'`.
+Expected: FAIL — `ModuleNotFoundError: No module named 'lex_app_frontend'`.
 
 - [ ] **Step 3: Write the module**
 
-Create `packaging/lex_frontend/__init__.py`:
+Create `packaging/lex_app_frontend/__init__.py`:
 
 ```python
 """The compiled LEX frontend, as an installable package.
@@ -274,7 +274,7 @@ from pathlib import Path
 _PACKAGE_DIR = Path(__file__).resolve().parent
 
 try:
-    __version__ = version("lex-frontend")
+    __version__ = version("lex-app-frontend")
 except PackageNotFoundError:      # running from a source tree, not installed
     __version__ = "0.0.0.dev0"
 
@@ -307,7 +307,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "lex-frontend"
+name = "lex-app-frontend"
 description = "The compiled LEX frontend bundle, served by lex-app."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -319,22 +319,22 @@ dynamic = ["version"]
 dependencies = []
 
 [tool.setuptools.dynamic]
-version = {attr = "lex_frontend._VERSION"}
+version = {attr = "lex_app_frontend._VERSION"}
 
 [tool.setuptools.packages.find]
-include = ["lex_frontend*"]
+include = ["lex_app_frontend*"]
 
 [tool.setuptools.package-data]
-"lex_frontend" = ["build/**/*"]
+"lex_app_frontend" = ["build/**/*"]
 ```
 
 - [ ] **Step 5: Add the version attribute setuptools reads**
 
-`dynamic = ["version"]` above reads `lex_frontend._VERSION`, which must be a
+`dynamic = ["version"]` above reads `lex_app_frontend._VERSION`, which must be a
 plain literal — setuptools evaluates it without installing the package, so the
 `importlib.metadata` lookup in `__version__` cannot serve this purpose.
 
-Insert into `packaging/lex_frontend/__init__.py`, directly below `_PACKAGE_DIR`:
+Insert into `packaging/lex_app_frontend/__init__.py`, directly below `_PACKAGE_DIR`:
 
 ```python
 # Overwritten by scripts/assemble_wheel.py at publish time from package.json.
@@ -348,14 +348,14 @@ _VERSION = "0.0.0.dev0"
 Create `packaging/README.md`:
 
 ```markdown
-# lex-frontend
+# lex-app-frontend
 
 The compiled LEX frontend bundle. Installed by `lex-app`, which serves the
-directory returned by `lex_frontend.build_path()`.
+directory returned by `lex_app_frontend.build_path()`.
 
 This package is built and published from
 `ExcellenceCloudGmbH/process-admin-general-client`, from the same version number
-as the `@excellencecloudgmbh/lex-frontend` npm package. The version you have
+as the `@excellencecloudgmbh/lex-app-frontend` npm package. The version you have
 installed identifies the frontend source revision exactly.
 
 Not intended for direct use.
@@ -365,7 +365,7 @@ Not intended for direct use.
 
 ```bash
 cd packaging
-mkdir -p lex_frontend/build && echo '<!doctype html>' > lex_frontend/build/index.html
+mkdir -p lex_app_frontend/build && echo '<!doctype html>' > lex_app_frontend/build/index.html
 pip install -e .
 python -m pytest tests/test_build_path.py -q
 ```
@@ -375,9 +375,9 @@ Expected: PASS, 4 tests. (The `mkdir`/`echo` stands in for a real `yarn build`; 
 - [ ] **Step 8: Commit**
 
 ```bash
-git add packaging/pyproject.toml packaging/lex_frontend/__init__.py \
+git add packaging/pyproject.toml packaging/lex_app_frontend/__init__.py \
         packaging/README.md packaging/tests/test_build_path.py
-git commit -m "feat(packaging): a lex-frontend wheel that locates the bundle
+git commit -m "feat(packaging): a lex-app-frontend wheel that locates the bundle
 
 One function, because that is the whole contract: lex-app calls build_path()
 and serves what it returns. It raises on a missing bundle rather than handing
@@ -427,8 +427,8 @@ def repo(tmp_path):
     (build / "index.html").write_text("<!doctype html>")
     (build / "assets").mkdir()
     (build / "assets" / "index-ABC123.js").write_text("console.log(1)")
-    (tmp_path / "packaging" / "lex_frontend").mkdir(parents=True)
-    (tmp_path / "packaging" / "lex_frontend" / "__init__.py").write_text(
+    (tmp_path / "packaging" / "lex_app_frontend").mkdir(parents=True)
+    (tmp_path / "packaging" / "lex_app_frontend" / "__init__.py").write_text(
         '_VERSION = "0.0.0.dev0"\n'
     )
     return tmp_path
@@ -436,21 +436,21 @@ def repo(tmp_path):
 
 def test_the_bundle_is_copied_into_the_package(repo):
     assemble_wheel.assemble(repo)
-    dest = repo / "packaging" / "lex_frontend" / "build"
+    dest = repo / "packaging" / "lex_app_frontend" / "build"
     assert (dest / "index.html").is_file()
     assert (dest / "assets" / "index-ABC123.js").is_file()
 
 
 def test_the_version_is_stamped_from_package_json(repo):
     assemble_wheel.assemble(repo)
-    text = (repo / "packaging" / "lex_frontend" / "__init__.py").read_text()
+    text = (repo / "packaging" / "lex_app_frontend" / "__init__.py").read_text()
     assert '_VERSION = "1.10.0"' in text
     assert "0.0.0.dev0" not in text
 
 
 def test_assembling_twice_does_not_accumulate_stale_assets(repo):
     assemble_wheel.assemble(repo)
-    stale = repo / "packaging" / "lex_frontend" / "build" / "assets" / "index-OLD.js"
+    stale = repo / "packaging" / "lex_app_frontend" / "build" / "assets" / "index-OLD.js"
     stale.write_text("stale")
     assemble_wheel.assemble(repo)
     # A content-hashed asset from a previous build must not ship inside a later
@@ -504,7 +504,7 @@ def assemble(repo: Path) -> str:
 
     version = json.loads((repo / "package.json").read_text())["version"]
 
-    dest = repo / "packaging" / "lex_frontend" / "build"
+    dest = repo / "packaging" / "lex_app_frontend" / "build"
     # Removed rather than merged: asset filenames are content hashes, so a
     # merge leaves every previous build's assets in place and the wheel's
     # contents start depending on the order it was built in.
@@ -512,7 +512,7 @@ def assemble(repo: Path) -> str:
         shutil.rmtree(dest)
     shutil.copytree(source, dest)
 
-    init = repo / "packaging" / "lex_frontend" / "__init__.py"
+    init = repo / "packaging" / "lex_app_frontend" / "__init__.py"
     text = init.read_text()
     stamped, count = re.subn(
         r'^_VERSION = ".*"$', f'_VERSION = "{version}"', text, count=1, flags=re.M
@@ -522,7 +522,7 @@ def assemble(repo: Path) -> str:
     init.write_text(stamped)
 
     files = sum(1 for _ in dest.rglob("*") if _.is_file())
-    print(f"assembled lex-frontend {version}: {files} files from {source}")
+    print(f"assembled lex-app-frontend {version}: {files} files from {source}")
     return version
 
 
@@ -544,7 +544,7 @@ Expected: PASS, 4 tests.
 cd .. && NPM_MARMELAB_TOKEN=x yarn build && python scripts/assemble_wheel.py
 ```
 
-Expected: `assembled lex-frontend 1.10.0: 15 files from .../build`. The count should match `find build -type f | wc -l`.
+Expected: `assembled lex-app-frontend 1.10.0: 15 files from .../build`. The count should match `find build -type f | wc -l`.
 
 - [ ] **Step 6: Keep the assembled copy out of git**
 
@@ -554,7 +554,7 @@ Append to `.gitignore`:
 # Assembled at publish time by scripts/assemble_wheel.py — never committed.
 # Committing it would reintroduce exactly the 6.3 MB-per-update history growth
 # this whole change removes.
-packaging/lex_frontend/build/
+packaging/lex_app_frontend/build/
 ```
 
 - [ ] **Step 7: Commit**
@@ -582,7 +582,7 @@ The assembled copy is gitignored — committing it would reintroduce the
 **Files:**
 - Create: `.github/workflows/publish-frontend.yml` (PAC)
 
-**New secret required on PAC:** `PYPI_API_TOKEN_FRONTEND`, scoped to the new `lex-frontend` PyPI project. `lex-app` already has a `PYPI_API_TOKEN`, but it is scoped to `lex-app` and cannot publish a different project. Create the PyPI project and its token before running this workflow.
+**New secret required on PAC:** `PYPI_API_TOKEN_FRONTEND`, scoped to the new `lex-app-frontend` PyPI project. `lex-app` already has a `PYPI_API_TOKEN`, but it is scoped to `lex-app` and cannot publish a different project. Create the PyPI project and its token before running this workflow.
 
 - [ ] **Step 1: Write the workflow**
 
@@ -596,7 +596,7 @@ Create `.github/workflows/publish-frontend.yml`:
 # is not released on push.
 #
 # One version number (package.json) produces three things that must agree: the
-# npm package, the lex-frontend wheel, and the git tag. Any of them derived
+# npm package, the lex-app-frontend wheel, and the git tag. Any of them derived
 # separately is a place for them to drift — which is how the repo came to hold
 # 0.2.0 while its tags said v1.9.0.
 name: Publish frontend
@@ -700,14 +700,14 @@ jobs:
         run: |
           set -euo pipefail
           TAG="v${{ steps.version.outputs.value }}"
-          git tag -a "$TAG" -m "lex-frontend $TAG"
+          git tag -a "$TAG" -m "lex-app-frontend $TAG"
           git push origin "$TAG"
 
       - name: Summarise
         if: ${{ always() }}
         run: |
           {
-            printf '## lex-frontend %s\n\n' "${{ steps.version.outputs.value }}"
+            printf '## lex-app-frontend %s\n\n' "${{ steps.version.outputs.value }}"
             if [ "${{ inputs.dry_run }}" = "true" ]; then
               printf 'DRY RUN — nothing was published or tagged.\n\n'
             fi
@@ -752,15 +752,15 @@ This workflow must be on PAC's default branch before GitHub offers it — `workf
 
 Actions → **Publish frontend** → Run workflow → leave `dry_run` ticked → Run.
 
-Expected in the summary: `DRY RUN — nothing was published or tagged`, a `packaging/dist` listing containing `lex_frontend-1.10.0-py3-none-any.whl`, and the pin line.
+Expected in the summary: `DRY RUN — nothing was published or tagged`, a `packaging/dist` listing containing `lex_app_frontend-1.10.0-py3-none-any.whl`, and the pin line.
 
 - [ ] **Step 5: Real run**
 
 Same, with `dry_run` unticked. Then confirm all three landed:
 
 ```bash
-npm view @excellencecloudgmbh/lex-frontend version --registry=https://npm.pkg.github.com
-pip download lex-frontend==1.10.0 --no-deps -d /tmp/verify
+npm view @excellencecloudgmbh/lex-app-frontend version --registry=https://npm.pkg.github.com
+pip download lex-app-frontend==1.10.0 --no-deps -d /tmp/verify
 git ls-remote --tags origin | grep v1.10.0
 ```
 
@@ -774,7 +774,7 @@ Expected: `1.10.0`, a downloaded wheel, and the tag.
 - Modify: `lex/lex_app/settings.py:233-235` (lex-app)
 - Test: `lex/test_project/tests/init/test_1p_settings_urls_views.py` (lex-app)
 
-The fallback is what makes this migration safe: an instance with no `lex-frontend` installed keeps working from the in-tree copy, so this task can merge before Task 4 has ever published anything.
+The fallback is what makes this migration safe: an instance with no `lex-app-frontend` installed keeps working from the in-tree copy, so this task can merge before Task 4 has ever published anything.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -782,7 +782,7 @@ Append to `lex/test_project/tests/init/test_1p_settings_urls_views.py`:
 
 ```python
     def test_1_131_react_build_path_prefers_the_installed_frontend_package(self):
-        """1.131: an installed lex-frontend wins over the in-tree bundle.
+        """1.131: an installed lex-app-frontend wins over the in-tree bundle.
 
         The pinned wheel is the release's frontend identity. If the in-tree
         copy won, an instance would serve whatever happened to be committed
@@ -873,7 +873,7 @@ with:
 def _resolve_react_build_path(package="unset") -> str:
     """Where the single-page app is served from.
 
-    The pinned `lex-frontend` wheel is the release's frontend identity, so an
+    The pinned `lex-app-frontend` wheel is the release's frontend identity, so an
     installed one wins. The in-tree bundle at lex/react/build remains the
     fallback, which is what lets a source checkout run and what let this change
     land before anything was published.
@@ -886,7 +886,7 @@ def _resolve_react_build_path(package="unset") -> str:
     """
     if package == "unset":
         try:
-            import lex_frontend as package  # type: ignore[no-redef]
+            import lex_app_frontend as package  # type: ignore[no-redef]
         except ImportError:
             package = None
 
@@ -895,7 +895,7 @@ def _resolve_react_build_path(package="unset") -> str:
             return Path(package.build_path()).as_posix()
         except Exception as exc:      # noqa: BLE001 — see the docstring
             print(
-                f"lex-frontend is installed but its bundle could not be located "
+                f"lex-app-frontend is installed but its bundle could not be located "
                 f"({exc}); falling back to the in-tree bundle.",
                 file=sys.stderr,
             )
@@ -932,7 +932,7 @@ Expected: line 63, unchanged.
 git add lex/lex_app/settings.py lex/test_project/tests/init/test_1p_settings_urls_views.py
 git commit -m "feat(settings): serve the frontend from the installed package
 
-An installed lex-frontend wins over the in-tree bundle, because the pinned
+An installed lex-app-frontend wins over the in-tree bundle, because the pinned
 wheel is the release's frontend identity — if the committed copy won, an
 instance would serve whatever happened to be in the tree rather than the
 version its release pinned.
@@ -985,20 +985,20 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 
 def test_requirements_pins_the_frontend_to_an_exact_version():
     text = (REPO_ROOT / "requirements.txt").read_text()
-    lines = [ln.strip() for ln in text.splitlines() if ln.strip().startswith("lex-frontend")]
-    assert len(lines) == 1, f"expected exactly one lex-frontend line, got {lines}"
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip().startswith("lex-app-frontend")]
+    assert len(lines) == 1, f"expected exactly one lex-app-frontend line, got {lines}"
     assert ranges.PIN_RE.fullmatch(lines[0]), (
         f"{lines[0]!r} is not an exact pin — a range cannot identify one revision"
     )
 
 
 @pytest.mark.parametrize("line,ok", [
-    ("lex-frontend==1.10.0", True),
-    ("lex-frontend==1.10.0rc1", True),
-    ("lex-frontend>=1.10.0", False),
-    ("lex-frontend~=1.10.0", False),
-    ("lex-frontend", False),
-    ("lex-frontend==1.10.*", False),
+    ("lex-app-frontend==1.10.0", True),
+    ("lex-app-frontend==1.10.0rc1", True),
+    ("lex-app-frontend>=1.10.0", False),
+    ("lex-app-frontend~=1.10.0", False),
+    ("lex-app-frontend", False),
+    ("lex-app-frontend==1.10.*", False),
 ], ids=["exact", "exact-rc", "gte", "compatible", "bare", "wildcard"])
 def test_only_an_exact_pin_is_accepted(line, ok):
     assert bool(ranges.PIN_RE.fullmatch(line)) is ok
@@ -1021,7 +1021,7 @@ Append to `.github/scripts/release_notes/ranges.py`:
 # ("&gt;=1.10.0") or a wildcard ("1.10.*") resolves to different revisions at
 # different times, which is not provenance — it is the ambiguity this design
 # removes, wearing a version number.
-PIN_RE = re.compile(r"^lex-frontend==(?P<version>\d+\.\d+\.\d+[A-Za-z0-9.]*)$")
+PIN_RE = re.compile(r"^lex-app-frontend==(?P<version>\d+\.\d+\.\d+[A-Za-z0-9.]*)$")
 ```
 
 - [ ] **Step 4: Add the pin**
@@ -1031,7 +1031,7 @@ Append to `requirements.txt`:
 ```
 # The compiled frontend, published from process-admin-general-client. This pin
 # IS the release's frontend provenance — see docs/ci-cd/release-notes.md.
-lex-frontend==1.10.0
+lex-app-frontend==1.10.0
 ```
 
 - [ ] **Step 5: Run to confirm it passes**
@@ -1080,7 +1080,7 @@ cd <lex-app>        && python -m build
 ```bash
 python -m venv /tmp/verify-frontend
 /tmp/verify-frontend/bin/pip install --quiet \
-    <PAC>/packaging/dist/lex_frontend-1.10.0-py3-none-any.whl \
+    <PAC>/packaging/dist/lex_app_frontend-1.10.0-py3-none-any.whl \
     <lex-app>/dist/lex_app-*.whl
 ```
 
@@ -1088,14 +1088,14 @@ python -m venv /tmp/verify-frontend
 
 ```bash
 cd /tmp && /tmp/verify-frontend/bin/python -c "
-import lex_frontend, os
+import lex_app_frontend, os
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'lex.lex_app.settings')
-print('package build_path:', lex_frontend.build_path())
-print('index.html present:', (lex_frontend.build_path() / 'index.html').is_file())
+print('package build_path:', lex_app_frontend.build_path())
+print('index.html present:', (lex_app_frontend.build_path() / 'index.html').is_file())
 "
 ```
 
-Expected: a path under `site-packages/lex_frontend/build`, and `True`.
+Expected: a path under `site-packages/lex_app_frontend/build`, and `True`.
 
 Run it from `/tmp`, not from a checkout — `cwd` on `sys.path` would import the source tree and defeat the check.
 
@@ -1108,7 +1108,7 @@ curl -sS -o /dev/null -w '%{http_code}\n' http://localhost:8000/
 curl -sS http://localhost:8000/ | head -c 200
 ```
 
-Expected: `200`, and HTML containing a `<script src="/assets/index-…js">` tag whose filename matches one in `lex_frontend/build/assets/`. A `200` with an empty body means the path resolved but the directory is empty — which is the exact failure `build_path()` raises on, so investigate rather than accept it.
+Expected: `200`, and HTML containing a `<script src="/assets/index-…js">` tag whose filename matches one in `lex_app_frontend/build/assets/`. A `200` with an empty body means the path resolved but the directory is empty — which is the exact failure `build_path()` raises on, so investigate rather than accept it.
 
 - [ ] **Step 5: Record the result**
 
@@ -1150,14 +1150,14 @@ def test_a_missing_requirements_file_returns_none():
 
 
 def test_a_loose_specifier_is_not_treated_as_provenance():
-    show = lambda ref, path: "lex-frontend>=1.10.0\n"
+    show = lambda ref, path: "lex-app-frontend>=1.10.0\n"
     assert ranges.frontend_version_at("v2.2.0", show=show) is None
 
 
 def test_a_commented_out_pin_is_ignored():
     # A commented pin is not a dependency, and reading it would attribute a
     # release to a frontend it does not ship.
-    show = lambda ref, path: "# lex-frontend==9.9.9\nlex-frontend==1.10.0\n"
+    show = lambda ref, path: "# lex-app-frontend==9.9.9\nlex-frontend==1.10.0\n"
     assert ranges.frontend_version_at("v2.2.0", show=show) == "1.10.0"
 
 
@@ -1257,7 +1257,7 @@ def _pins(mapping):
         if path != "requirements.txt":
             return None
         version = mapping.get(ref)
-        return f"lex-frontend=={version}\n" if version else "django==5.0\n"
+        return f"lex-app-frontend=={version}\n" if version else "django==5.0\n"
     return show
 
 
@@ -1494,13 +1494,13 @@ The current section explains the manifest beside the bundle. Replace its body wi
 ```markdown
 That fact is now a version pin. `requirements.txt` carries one line:
 
-    lex-frontend==1.10.0
+    lex-app-frontend==1.10.0
 
 The frontend is published from PAC as a versioned package — an npm package and
 a Python wheel, from one version number — and lex-app depends on the wheel like
 any other dependency. So "which frontend is in v2.3.0?" is answered by:
 
-    git show v2.3.0:requirements.txt | grep lex-frontend
+    git show v2.3.0:requirements.txt | grep lex-app-frontend
 
 Two pins, at two tags, give a range of PAC tags, and the frontend half of the
 note is `git log` between them.
@@ -1550,7 +1550,7 @@ the pin resolves before the build or the build fails."
 - [ ] **Step 1: Confirm the release actually shipped with the pin**
 
 ```bash
-git show <released-tag>:requirements.txt | grep lex-frontend
+git show <released-tag>:requirements.txt | grep lex-app-frontend
 pip download lex-app==<released-version> --no-deps -d /tmp/shipped
 ```
 
@@ -1618,7 +1618,7 @@ dpag-pip' described a destination that no longer exists."
 git add pyproject.toml
 git commit -m "chore(packaging): stop shipping the frontend bundle in the wheel
 
-The bundle arrives as the pinned lex-frontend dependency. 15 files and 6.3 MB
+The bundle arrives as the pinned lex-app-frontend dependency. 15 files and 6.3 MB
 leave the working tree; the 42.1 MB already in the pack stays, because
 rewriting 225 tags of shared history is not worth it. The win is that it stops
 growing.
@@ -1693,7 +1693,7 @@ grows again — the code that WROTE it is what goes here."
 
 ## Self-review
 
-**Spec coverage.** Every section of `2026-09-02-frontend-as-a-versioned-package.md` maps to a task: the recommendation (Tasks 1-4), the release-notes simplification (Tasks 8-10), what survives (side-car kept in Tasks 9 and 13), the versioning scheme (Task 1), the sequence (task order), and the costs — Django's static path (Tasks 5, 7), two registries (Task 4), history not shrinking (Task 12's commit message). The spec's four open decisions are settled in this plan as: GitHub Packages, `@excellencecloudgmbh/lex-frontend`, `workflow_dispatch` (a deliberate action, not on merge), and the changelog question deferred rather than answered.
+**Spec coverage.** Every section of `2026-09-02-frontend-as-a-versioned-package.md` maps to a task: the recommendation (Tasks 1-4), the release-notes simplification (Tasks 8-10), what survives (side-car kept in Tasks 9 and 13), the versioning scheme (Task 1), the sequence (task order), and the costs — Django's static path (Tasks 5, 7), two registries (Task 4), history not shrinking (Task 12's commit message). The spec's four open decisions are settled in this plan as: GitHub Packages, `@excellencecloudgmbh/lex-app-frontend`, `workflow_dispatch` (a deliberate action, not on merge), and the changelog question deferred rather than answered.
 
 **Not covered, deliberately.** The spec floats shipping PAC's `CHANGELOG.md` inside the package to remove the PAC checkout and `FRONTEND_REPO_TOKEN` from the notes path. That is a separate change with its own design question — whether composed changelog entries read as well as commit-derived prose — and it is not needed for anything here. Left out rather than half-specified.
 
