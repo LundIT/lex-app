@@ -1453,12 +1453,17 @@ async def _iter_upstream(upstream_resp: httpx.Response):
         raise
 
 
+#: Response headers the ASGI server sets itself. Forwarding the upstream's copy
+#: makes uvicorn's copy a DUPLICATE -- and `Date` and `Server` are singleton
+#: fields (RFC 9110 5.5.2). HTTP/1.1 clients tolerate a repeat; HTTP/2 does not,
+#: so an intermediary terminating h2 rejects the message and resets the stream.
+#: That reaches the browser as `net::ERR_HTTP2_PROTOCOL_ERROR` against a 200 --
+#: a response that started fine and then died, which is exactly how a download
+#: stuck at 0 bytes was reported.
+_SERVER_OWNED_RESPONSE_HEADERS = frozenset({"date", "server"})
+
 #: Dropped from both directions: meaningful only for a single hop.
 _HOP_BY_HOP = frozenset({
-    # Content-Length included: httpx recomputes it from the body we actually
-    # pass, and a forwarded value beats httpx's own -- so any mismatch between
-    # the two becomes a LocalProtocolError instead of a request.
-    "content-length",
     "host",
     "connection",
     "keep-alive",
@@ -1472,8 +1477,17 @@ _HOP_BY_HOP = frozenset({
 })
 
 
+#: Request-only. httpx recomputes Content-Length from the body we hand it, and a
+#: forwarded value beats httpx's own -- so a mismatch becomes a
+#: LocalProtocolError instead of a request. Deliberately NOT dropped from
+#: responses: the raw relay preserves the body exactly, so the upstream's length
+#: is still correct, and a sized response is what lets the browser draw a
+#: progress bar instead of sitting at 0 bytes.
+_REQUEST_DROP = _HOP_BY_HOP | {"content-length"}
+
+
 def _forwardable_request_headers(request: Request) -> Dict[str, str]:
-    return {k: v for k, v in request.headers.items() if k.lower() not in _HOP_BY_HOP}
+    return {k: v for k, v in request.headers.items() if k.lower() not in _REQUEST_DROP}
 
 
 def _build_proxied_response(request: Request, upstream_resp: httpx.Response) -> Response:
@@ -1486,11 +1500,17 @@ def _build_proxied_response(request: Request, upstream_resp: httpx.Response) -> 
     Passing the encoded bytes through untouched costs no CPU and keeps the
     saving. ``GZipMiddleware`` sees the header and leaves such responses alone.
     """
-    drop = _HOP_BY_HOP | {"content-length"}
+    # Content-Length is KEPT on the streaming path. `aiter_raw()` relays the
+    # upstream's bytes unchanged, so its length is still exactly right -- and a
+    # sized response avoids `Transfer-Encoding: chunked`, which HTTP/2 forbids
+    # outright (RFC 9113 8.2.2) and which an h2 intermediary has to rewrite.
+    # Dropping it was what turned every proxied response into a chunked one.
+    drop = _HOP_BY_HOP | _SERVER_OWNED_RESPONSE_HEADERS
     if upstream_resp.is_stream_consumed:
-        # `.content` is decoded, so claiming an encoding would make the body
-        # undecodable for the client. See _iter_upstream.
-        drop = drop | {"content-encoding"}
+        # `.content` is decoded and may have been re-read, so neither the
+        # upstream's encoding nor its length describes what we are about to
+        # send. See _iter_upstream.
+        drop = drop | {"content-encoding", "content-length"}
     resp_headers = [
         (k, v)
         for k, v in upstream_resp.headers.multi_items()
@@ -2047,10 +2067,21 @@ def _build_static_routes() -> List[Any]:
     # Streamlit's own layout is static/static/{js,css,media}; index.html points
     # at "./static/js/...". Mount the inner directory at <prefix>/static.
     if os.path.isdir(nested):
+        # GZip wraps ONLY the bundle, not the whole app. Compressing here is
+        # what recovers the 4.17x on the eagerly-preloaded chunks; applying it
+        # app-wide also re-compressed proxied PDFs and ZIPs -- already-compressed
+        # bytes, for nothing, on a loop this process shares with the Streamlit
+        # script runner -- and forced those responses into chunked encoding.
+        # Streamlit gzips its own text responses upstream, so the proxy path
+        # loses nothing by passing encodings through untouched.
         routes.append(
             Mount(
                 f"{prefix}/static",
-                app=_PublicStreamlitStatic(directory=nested),
+                app=GZipMiddleware(
+                    _PublicStreamlitStatic(directory=nested),
+                    minimum_size=STATIC_GZIP_MIN_SIZE,
+                    compresslevel=STATIC_GZIP_LEVEL,
+                ),
                 name="lex_static",
             )
         )
@@ -2339,21 +2370,6 @@ app.add_middleware(
     secret_key=SESSION_SECRET,
     https_only=SESSION_HTTPS_ONLY,
     same_site=SESSION_SAMESITE,
-)
-
-# Added last, so it sits outermost and compresses on the way out. This is what
-# restores the compression the proxy path used to destroy: httpx transparently
-# decodes the upstream body and `proxy` drops `Content-Encoding` (it must -- the
-# bytes it holds are no longer encoded), so before this the whole bundle went
-# out as plaintext. Measured over Streamlit 1.61's shipped chunks: 19.7 MB raw
-# vs 5.8 MB gzipped, a 3.4x saving that had simply been switched off.
-#
-# GZipMiddleware passes non-HTTP scopes straight through, so the WebSocket at
-# /_stcore/stream is untouched.
-app.add_middleware(
-    GZipMiddleware,
-    minimum_size=STATIC_GZIP_MIN_SIZE,
-    compresslevel=STATIC_GZIP_LEVEL,
 )
 
 # Outermost of all, so the status it records is the one the client received --
