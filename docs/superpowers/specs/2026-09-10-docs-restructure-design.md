@@ -80,7 +80,7 @@ Blocking-first, then newest. Status as of 2026-09-10.
 | 4 | `calculations/scheduled calculations` | Written in lex-app under a mirror-managed path; guard-rejected, never published | **done** |
 | 5 | `access-and-dashboards/embedding` | Planned | **declined** — `lex_view callbacks` and `streamlit dashboards` already cover both directions |
 | 6 | Screenshots | 9 placeholders | **7 done** — record page + 4 tabs, the grid, table settings, `lex --help`; `deploying` got a mermaid diagram instead |
-| 7 | Analytics tab + widgets figures | Need a Streamlit dashboard in the e2e project **and** `lex streamlit` in the harness's webServer list | blocked, recorded on both pages |
+| 7 | Analytics tab + widgets figures | Both prerequisites are now done — the fixture has `Fund.streamlit_main` and the harness starts `lex streamlit` behind `LEX_DOCSHOT_STREAMLIT=1`. Still blocked one level down: the Streamlit proxy wants a Keycloak JWT, the harness signs in with a Django admin session | blocked on fixture auth; capture exists and is skipped |
 | 8 | `reference/` completeness sweep | Not yet audited name-by-name against `__all__` and the env-var list | open |
 | 9 | Backup and restore | Named as absent; no framework-side facts verified yet, so not written | open |
 
@@ -100,6 +100,21 @@ four of its own bugs and two real ones (a dangling link to the declined
 
 | Branch | Repo | Contains |
 |---|---|---|
-| `docs/restructure-2026-09` … `-s5` | lex-app-docs | The restructure, staged |
-| `docs/restructure-mirror` | lex-app | The mirror manifest and stale-copy removal |
-| `feat/docs-figures` | lex-app | The screenshot pipeline |
+| `docs/restructure-2026-09-s8` | lex-app-docs | The restructure and the figures (all stages) |
+| `docs/restructure-mirror-s4` | lex-app | The mirror manifest, stale-copy removal, this spec |
+| `feat/docs-figures-s3` | lex-app | The renderer and figures spec |
+| `docs/figure-captures` | process-admin-general-client | The capture harness and the dashboard fixture |
+
+## What the figure pipeline learned
+
+Worth carrying into anything similar. Every one of these produced a wrong
+figure before it produced a rule:
+
+- A resolved anchor is not a usable screen. The Analytics capture made a
+  clean, correct photograph of an authentication error.
+- Measure and photograph in one settled layout, then check it did not move.
+  A uniformly-offset figure is undetectable by eye once built.
+- Clamp a box that overflows the picture; REJECT one entirely outside it.
+  Conflating those marks controls that were never photographed.
+- Place a mark by the target's size. Lanes suit a column of switches and are
+  wrong for a row of tabs, where they drag leaders across the whole image.
